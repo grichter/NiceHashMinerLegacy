@@ -10,6 +10,10 @@ using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 using NiceHashMiner.Stats;
+using log4net.Core;
+using NiceHashMinerLegacy.Common;
+using NiceHashMinerLegacy.Common.Enums;
+using System.Net;
 
 namespace NiceHashMiner
 {
@@ -21,11 +25,13 @@ namespace NiceHashMiner
         [STAThread]
         static void Main(string[] argv)
         {
+            BUILD_TAG.ASSERT_COMPATIBLE_BUILDS();
             // Set working directory to exe
             var pathSet = false;
             var path = Path.GetDirectoryName(Application.ExecutablePath);
             if (path != null)
             {
+                Paths.SetRoot(path);
                 Environment.CurrentDirectory = path;
                 pathSet = true;
             }
@@ -40,20 +46,17 @@ namespace NiceHashMiner
             Application.SetCompatibleTextRenderingDefault(false);
 
             Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
-            //Console.OutputEncoding = System.Text.Encoding.Unicode;
-            // #0 set this first so data parsing will work correctly
-            Globals.JsonSettings = new JsonSerializerSettings
-            {
-                NullValueHandling = NullValueHandling.Ignore,
-                MissingMemberHandling = MissingMemberHandling.Ignore,
-                Culture = CultureInfo.InvariantCulture
-            };
+            // set security protocols
+            ServicePointManager.Expect100Continue = true;
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls
+                   | SecurityProtocolType.Tls11
+                   | SecurityProtocolType.Tls12
+                   | SecurityProtocolType.Ssl3;
 
             // #1 first initialize config
             ConfigManager.InitializeConfig();
 
             // #2 check if multiple instances are allowed
-            var startProgram = true;
             if (ConfigManager.GeneralConfig.AllowMultipleInstances == false)
             {
                 try
@@ -63,71 +66,81 @@ namespace NiceHashMiner
                     {
                         if (process.Id != current.Id)
                         {
-                            startProgram = false;
+                            // already running instance, return from Main
+                            return;
                         }
                     }
                 }
                 catch { }
             }
 
-            if (startProgram)
+
+            // TODO set logging level
+            Logger.ConfigureWithFile(ConfigManager.GeneralConfig.LogToFile, Level.Info, ConfigManager.GeneralConfig.LogMaxFileSize);
+
+            if (ConfigManager.GeneralConfig.DebugConsole)
             {
-                if (ConfigManager.GeneralConfig.LogToFile)
+                PInvokeHelpers.AllocConsole();
+            }
+
+            // init active display currency after config load
+            ExchangeRateApi.ActiveDisplayCurrency = ConfigManager.GeneralConfig.DisplayCurrency;
+
+            Logger.Info("NICEHASH", $"Starting up {ApplicationStateManager.Title}");
+
+            if (!pathSet)
+            {
+                Logger.Info("NICEHASH", "Path not set to executable");
+            }
+
+            // check TOS
+            if (ConfigManager.GeneralConfig.agreedWithTOS != ApplicationStateManager.CurrentTosVer)
+            {
+                Logger.Info("NICEHASH", $"TOS differs! agreed: {ConfigManager.GeneralConfig.agreedWithTOS} != Current {ApplicationStateManager.CurrentTosVer}. Showing TOS Form.");
+
+                Application.Run(new FormEula());
+                // check TOS after 
+                if (ConfigManager.GeneralConfig.agreedWithTOS != ApplicationStateManager.CurrentTosVer)
                 {
-                    Logger.ConfigureWithFile();
+                    Logger.Info("NICEHASH", "TOS differs AFTER TOS confirmation FORM");
+                    // TOS not confirmed return from Main
+                    return;
                 }
+            }
 
-                if (ConfigManager.GeneralConfig.DebugConsole)
+            // if config created show language select
+            if (string.IsNullOrEmpty(ConfigManager.GeneralConfig.Language))
+            {
+                if (Translations.GetAvailableLanguagesNames().Count > 1)
                 {
-                    PInvokeHelpers.AllocConsole();
-                }
-
-                // init active display currency after config load
-                ExchangeRateApi.ActiveDisplayCurrency = ConfigManager.GeneralConfig.DisplayCurrency;
-
-                // #2 then parse args
-                var commandLineArgs = new CommandLineParser(argv);
-
-                Helpers.ConsolePrint("NICEHASH", "Starting up NiceHashMiner v" + Application.ProductVersion);
-
-                if (!pathSet)
-                {
-                    Helpers.ConsolePrint("NICEHASH", "Path not set to executable");
-                }
-
-                var tosChecked = ConfigManager.GeneralConfig.agreedWithTOS == Globals.CurrentTosVer;
-                if (!tosChecked || !ConfigManager.GeneralConfigIsFileExist() && !commandLineArgs.IsLang)
-                {
-                    Helpers.ConsolePrint("NICEHASH",
-                        "No config file found. Running NiceHash Miner Legacy for the first time. Choosing a default language.");
                     Application.Run(new Form_ChooseLanguage());
-                }
-
-                // Init languages
-                International.Initialize(ConfigManager.GeneralConfig.Language);
-
-                if (commandLineArgs.IsLang)
-                {
-                    Helpers.ConsolePrint("NICEHASH", "Language is overwritten by command line parameter (-lang).");
-                    International.Initialize(commandLineArgs.LangValue);
-                    ConfigManager.GeneralConfig.Language = commandLineArgs.LangValue;
-                }
-
-                // check WMI
-                if (Helpers.IsWmiEnabled())
-                {
-                    if (ConfigManager.GeneralConfig.agreedWithTOS == Globals.CurrentTosVer)
-                    {
-                        Application.Run(new Form_Main());
-                    }
                 }
                 else
                 {
-                    MessageBox.Show(International.GetText("Program_WMI_Error_Text"),
-                        International.GetText("Program_WMI_Error_Title"),
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ConfigManager.GeneralConfig.Language = "en";
+                    ConfigManager.GeneralConfigFileCommit();
                 }
+
             }
+            Translations.SetLanguage(ConfigManager.GeneralConfig.Language);
+
+            // if system requirements are not ensured it will fail the program
+            var canRun = ApplicationStateManager.SystemRequirementsEnsured();
+            if (!canRun) return;
+
+            // 3rdparty miners TOS check if setting set
+            if (ConfigManager.GeneralConfig.Use3rdPartyMiners == Use3rdPartyMiners.NOT_SET)
+            {
+                Application.Run(new Form_3rdParty_TOS());
+                ConfigManager.GeneralConfigFileCommit();
+            }
+
+            // PRODUCTION
+#if !(TESTNET || TESTNETDEV || PRODUCTION_NEW)
+            // if no BTC address show login/register form
+            if (ConfigManager.GeneralConfig.BitcoinAddress.Trim() == "") Application.Run(new EnterBTCDialogSwitch());
+#endif
+            Application.Run(new Form_Main());
         }
     }
 }

@@ -16,7 +16,7 @@
             base.Dispose(disposing);
         }
 
-        #region Component Designer generated code
+#region Component Designer generated code
 
         /// <summary> 
         /// Required method for Designer support - do not modify 
@@ -25,7 +25,7 @@
         private void InitializeComponent() {
             this.components = new System.ComponentModel.Container();
             this.listViewDevices = new System.Windows.Forms.ListView();
-            this.columnHeader0 = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.devicesHeader = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.contextMenuStrip1 = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.toolStripMenuItemEnable = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripMenuItem1 = new System.Windows.Forms.ToolStripMenuItem();
@@ -36,25 +36,27 @@
             // 
             this.listViewDevices.CheckBoxes = true;
             this.listViewDevices.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
-            this.columnHeader0});
+            this.devicesHeader});
             this.listViewDevices.Dock = System.Windows.Forms.DockStyle.Fill;
             this.listViewDevices.FullRowSelect = true;
             this.listViewDevices.GridLines = true;
+            this.listViewDevices.HideSelection = false;
             this.listViewDevices.Location = new System.Drawing.Point(0, 0);
             this.listViewDevices.Name = "listViewDevices";
-            this.listViewDevices.Size = new System.Drawing.Size(374, 226);
+            this.listViewDevices.Size = new System.Drawing.Size(647, 303);
             this.listViewDevices.TabIndex = 5;
             this.listViewDevices.UseCompatibleStateImageBehavior = false;
             this.listViewDevices.View = System.Windows.Forms.View.Details;
             this.listViewDevices.MouseClick += new System.Windows.Forms.MouseEventHandler(this.ListViewDevices_MouseClick);
             // 
-            // columnHeader0
+            // devicesHeader
             // 
-            this.columnHeader0.Text = "Enabled";
-            this.columnHeader0.Width = 350;
+            this.devicesHeader.Text = "Enabled";
+            this.devicesHeader.Width = 350;
             // 
             // contextMenuStrip1
             // 
+            this.contextMenuStrip1.ImageScalingSize = new System.Drawing.Size(32, 32);
             this.contextMenuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.toolStripMenuItemEnable,
             this.toolStripMenuItem1});
@@ -79,19 +81,19 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.Controls.Add(this.listViewDevices);
             this.Name = "DevicesListViewEnableControl";
-            this.Size = new System.Drawing.Size(374, 226);
+            this.Size = new System.Drawing.Size(647, 303);
             this.Resize += new System.EventHandler(this.DevicesListViewEnableControl_Resize);
             this.contextMenuStrip1.ResumeLayout(false);
             this.ResumeLayout(false);
 
         }
 
-        #endregion
+#endregion
 
-        private System.Windows.Forms.ListView listViewDevices;
-        private System.Windows.Forms.ColumnHeader columnHeader0;
-        private System.Windows.Forms.ContextMenuStrip contextMenuStrip1;
-        private System.Windows.Forms.ToolStripMenuItem toolStripMenuItemEnable;
-        private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem1;
+        protected System.Windows.Forms.ListView listViewDevices;
+        protected System.Windows.Forms.ColumnHeader devicesHeader;
+        protected System.Windows.Forms.ContextMenuStrip contextMenuStrip1;
+        protected System.Windows.Forms.ToolStripMenuItem toolStripMenuItemEnable;
+        protected System.Windows.Forms.ToolStripMenuItem toolStripMenuItem1;
     }
 }

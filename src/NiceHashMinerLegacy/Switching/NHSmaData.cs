@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using MinerPluginToolkitV1.Configs;
 using Newtonsoft.Json;
 using NiceHashMiner.Configs;
+using NiceHashMinerLegacy.Common;
 using NiceHashMinerLegacy.Common.Enums;
 
 namespace NiceHashMiner.Switching
@@ -15,7 +17,7 @@ namespace NiceHashMiner.Switching
     public static class NHSmaData
     {
         private const string Tag = "NHSMAData";
-        private const string CachedFile = "internals\\cached_sma.json";
+        private static string CachedFile => Paths.InternalsPath("cached_sma.json");
 
         public static bool Initialized { get; private set; }
         /// <summary>
@@ -26,29 +28,17 @@ namespace NiceHashMiner.Switching
         // private static Dictionary<AlgorithmType, List<double>> _recentPaying;
 
         // Global list of SMA data, should be accessed with a lock since callbacks/timers update it
-        private static Dictionary<AlgorithmType, NiceHashSma> _currentSma;
+        private static Dictionary<AlgorithmType, double> _currentPayingRates;
         // Global list of stable algorithms, should be accessed with a lock
         private static HashSet<AlgorithmType> _stableAlgorithms;
 
         // Public for tests only
         public static void Initialize()
         {
-            _currentSma = new Dictionary<AlgorithmType, NiceHashSma>();
+            _currentPayingRates = new Dictionary<AlgorithmType, double>();
             _stableAlgorithms = new HashSet<AlgorithmType>();
 
-            Dictionary<AlgorithmType, double> cacheDict = null;
-            try
-            {
-                var cache = File.ReadAllText(CachedFile);
-                cacheDict = JsonConvert.DeserializeObject<Dictionary<AlgorithmType, double>>(cache);
-            }
-            catch (FileNotFoundException)
-            {
-            }
-            catch (Exception e)
-            {
-                Helpers.ConsolePrint(Tag, e.ToString());
-            }
+            var cacheDict = InternalConfigs.ReadFileSettings<Dictionary<AlgorithmType, double>>(CachedFile);
 
             // _recentPaying = new Dictionary<AlgorithmType, List<double>>();
             foreach (AlgorithmType algo in Enum.GetValues(typeof(AlgorithmType)))
@@ -64,17 +54,7 @@ namespace NiceHashMiner.Switching
                     paying = 1;
 #endif
 
-                    _currentSma[algo] = new NiceHashSma
-                    {
-                        Port = (int) algo + 3333,
-                        Name = algo.ToString().ToLower(),
-                        Algo = (int) algo,
-                        Paying = paying
-                    };
-                    //_recentPaying[algo] = new List<double>
-                    //{
-                    //    0
-                    //};
+                    _currentPayingRates[algo] = paying;
                 }
             }
 
@@ -88,6 +68,7 @@ namespace NiceHashMiner.Switching
 
         #region Update Methods
 
+        // TODO maybe just swap the dictionaries???
         /// <summary>
         /// Change SMA profits to new values
         /// </summary>
@@ -95,28 +76,25 @@ namespace NiceHashMiner.Switching
         public static void UpdateSmaPaying(Dictionary<AlgorithmType, double> newSma)
         {
             CheckInit();
-            lock (_currentSma)
+            lock (_currentPayingRates)
             {
                 foreach (var algo in newSma.Keys)
                 {
-                    if (_currentSma.ContainsKey(algo))
+                    if (_currentPayingRates.ContainsKey(algo))
                     {
-                        _currentSma[algo].Paying = newSma[algo];
+                        _currentPayingRates[algo] = newSma[algo];
+#if FILLSMA
+                        var paying = 1;
+                        _currentPayingRates[algo] = paying;
+#endif
                     }
                 }
 
                 if (ConfigManager.GeneralConfig.UseSmaCache)
                 {
                     // Cache while in lock so file is not accessed on multiple threads
-                    try
-                    {
-                        var cache = JsonConvert.SerializeObject(newSma);
-                        File.WriteAllText(CachedFile, cache);
-                    }
-                    catch (Exception e)
-                    {
-                        Helpers.ConsolePrint(Tag, e.ToString());
-                    }
+                    var isFileSaved = InternalConfigs.WriteFileSettings(CachedFile, newSma);
+                    if (!isFileSaved) Logger.Error(Tag, "CachedSma not saved");
                 }
             }
 
@@ -129,12 +107,17 @@ namespace NiceHashMiner.Switching
         internal static void UpdatePayingForAlgo(AlgorithmType algo, double paying)
         {
             CheckInit();
-            lock (_currentSma)
+            lock (_currentPayingRates)
             {
-                if (!_currentSma.ContainsKey(algo))
+                if (!_currentPayingRates.ContainsKey(algo))
                     throw new ArgumentException("Algo not setup in SMA");
-                _currentSma[algo].Paying = paying;
+                _currentPayingRates[algo] = paying;
             }
+
+#if FILLSMA
+            paying = 1;
+            _currentPayingRates[algo] = paying;
+#endif
 
             HasData = true;
         }
@@ -175,57 +158,27 @@ namespace NiceHashMiner.Switching
             {
                 sb.AppendLine("\tNone changed");
             }
-            Helpers.ConsolePrint(Tag, sb.ToString());
+            Logger.Info(Tag, sb.ToString());
         }
 
         #endregion
 
         # region Get Methods
-
-        /// <summary>
-        /// Attempt to get SMA for an algorithm
-        /// </summary>
-        /// <param name="algo">Algorithm</param>
-        /// <param name="sma">Variable to place SMA in</param>
-        /// <returns>True iff we know about this algo</returns>
-        public static bool TryGetSma(AlgorithmType algo, out NiceHashSma sma)
-        {
-            CheckInit();
-            lock (_currentSma)
-            {
-                if (_currentSma.ContainsKey(algo))
-                {
-                    sma = _currentSma[algo];
-                    return true;
-                }
-            }
-
-            sma = null;
-            return false;
-        }
         
         /// <summary>
         /// Attempt to get paying rate for an algorithm
         /// </summary>
         /// <param name="algo">Algorithm</param>
-        /// <param name="sma">Variable to place paying in</param>
+        /// <param name="paying">Variable to place paying in</param>
         /// <returns>True iff we know about this algo</returns>
         public static bool TryGetPaying(AlgorithmType algo, out double paying)
         {
             CheckInit();
-            if (TryGetSma(algo, out var sma))
+            lock (_currentPayingRates)
             {
-                paying = sma.Paying;
-                return true;
+                return _currentPayingRates.TryGetValue(algo, out paying);
             }
-
-            paying = default(double);
-            return false;
         }
-
-        #endregion
-
-        #region Get Methods
 
         public static bool IsAlgorithmStable(AlgorithmType algo)
         {
@@ -246,14 +199,31 @@ namespace NiceHashMiner.Switching
             CheckInit();
             var dict = new Dictionary<AlgorithmType, double>();
 
-            lock (_currentSma)
+            lock (_currentPayingRates)
             {
-                foreach (var kvp in _currentSma)
+                var filtered = _currentPayingRates.Where(kvp => _stableAlgorithms.Contains(kvp.Key) == stable); 
+                foreach (var kvp in filtered)
                 {
-                    if (_stableAlgorithms.Contains(kvp.Key) == stable)
-                    {
-                        dict[kvp.Key] = kvp.Value.Paying;
-                    }
+                    dict[kvp.Key] = kvp.Value;
+                }
+            }
+
+            return dict;
+        }
+
+        /// <summary>
+        /// Copy and return SMA profits 
+        /// </summary>
+        public static Dictionary<AlgorithmType, double> CurrentProfitsSnapshot()
+        {
+            CheckInit();
+            var dict = new Dictionary<AlgorithmType, double>();
+
+            lock (_currentPayingRates)
+            {
+                foreach (var kvp in _currentPayingRates)
+                {
+                    dict[kvp.Key] = kvp.Value;
                 }
             }
 
@@ -270,68 +240,5 @@ namespace NiceHashMiner.Switching
             if (!Initialized)
                 throw new InvalidOperationException("NHSmaData cannot be used before initialization");
         }
-
-        #region Obsolete
-
-        //[Obsolete]
-        //public void AppendPayingForAlgo(AlgorithmType algo, double paying)
-        //{
-        //    if (algo >= 0 && _recentPaying.ContainsKey(algo))
-        //    {
-        //        if (_recentPaying[algo].Count >= ConfigManager.GeneralConfig.NormalizedProfitHistory || CurrentPayingForAlgo(algo) == 0)
-        //        {
-        //            _recentPaying[algo].RemoveAt(0);
-        //        }
-        //        _recentPaying[algo].Add(paying);
-        //    }
-        //}
-
-        //[Obsolete]
-        //public Dictionary<AlgorithmType, NiceHashSma> NormalizedSma()
-        //{
-        //    foreach (var algo in _recentPaying.Keys)
-        //    {
-        //        if (_currentSma.ContainsKey(algo))
-        //        {
-        //            var current = CurrentPayingForAlgo(algo);
-
-        //            if (ConfigManager.GeneralConfig.NormalizedProfitHistory > 0
-        //                && _recentPaying[algo].Count >= ConfigManager.GeneralConfig.NormalizedProfitHistory)
-        //            {
-        //                // Find IQR
-        //                var quartiles = _recentPaying[algo].Quartiles();
-        //                var IQR = quartiles.Item3 - quartiles.Item1;
-        //                var TQ = quartiles.Item3;
-
-        //                if (current > (IQR * ConfigManager.GeneralConfig.IQROverFactor) + TQ)
-        //                {
-        //                    // result is deviant over
-        //                    var norm = (IQR * ConfigManager.GeneralConfig.IQRNormalizeFactor) + TQ;
-        //                    Helpers.ConsolePrint("PROFITNORM",
-        //                        $"Algorithm {_currentSma[algo].name} profit deviant, {(current - TQ) / IQR} IQRs over ({current} actual, {TQ} 3Q). Normalizing to {norm}");
-        //                    _currentSma[algo].paying = norm;
-        //                }
-        //                else
-        //                {
-        //                    _currentSma[algo].paying = current;
-        //                }
-        //            }
-        //            else
-        //            {
-        //                _currentSma[algo].paying = current;
-        //            }
-        //        }
-        //    }
-
-        //    return _currentSma;
-        //}
-
-        //[Obsolete]
-        //private double CurrentPayingForAlgo(AlgorithmType algo)
-        //{
-        //    return _recentPaying.ContainsKey(algo) ? _recentPaying[algo].LastOrDefault() : 0;
-        //}
-
-        #endregion
     }
 }

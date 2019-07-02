@@ -1,466 +1,267 @@
 ﻿using NiceHashMiner.Configs;
 using NiceHashMiner.Devices;
 using NiceHashMiner.Forms;
-using NiceHashMiner.Forms.Components;
-using NiceHashMiner.Interfaces;
-using NiceHashMiner.Miners;
-using NiceHashMiner.Utils;
+using NiceHashMiner.Interfaces.DataVisualizer;
+using NiceHashMiner.Miners.IdleChecking;
+using NiceHashMiner.Stats;
+using NiceHashMiner.Switching;
 using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
-using System.Management;
 using System.Threading;
 using System.Windows.Forms;
-using NiceHashMiner.Stats;
-using NiceHashMiner.Switching;
-using NiceHashMinerLegacy.Common.Enums;
-using SystemTimer = System.Timers.Timer;
-using Timer = System.Windows.Forms.Timer;
+using static NiceHashMiner.Translations; // consider using static
 
 namespace NiceHashMiner
 {
-    using System.IO;
+    using NiceHashMiner.Forms.Components;
+    using NiceHashMiner.Plugin;
+    using NiceHashMiner.Utils;
+    using NiceHashMinerLegacy.Common;
+    using NiceHashMinerLegacy.Common.Enums;
 
-    public partial class Form_Main : Form, Form_Loading.IAfterInitializationCaller, IMainFormRatesComunication
+    public partial class Form_Main : Form, FormHelpers.ICustomTranslate, IVersionDisplayer, IBalanceBTCDisplayer, IBalanceFiatDisplayer, IGlobalMiningRateDisplayer, IMiningProfitabilityDisplayer, INoInternetConnectionDisplayer
     {
-        private string _visitUrlNew = Links.VisitUrlNew;
-
-        private Timer _minerStatsCheck;
-        //private Timer _smaMinerCheck;
-        //private Timer _bitcoinExchangeCheck;
-        private Timer _startupTimer;
-        private Timer _idleCheck;
-        private SystemTimer _computeDevicesCheckTimer;
-
         private bool _showWarningNiceHashData;
-        private bool _demoMode;
 
-        private readonly Random R;
+        private bool _exitCalled = false;
 
-        private Form_Loading _loadingScreen;
-        private Form_Benchmark _benchmarkForm;
+        private Form_MinerPlugins _minerPluginsForm;
 
-        private int _flowLayoutPanelVisibleCount = 0;
-        private int _flowLayoutPanelRatesIndex = 0;
+        //private bool _isDeviceDetectionInitialized = false;
 
-        private const string BetaAlphaPostfixString = "";
-
-        private bool _isDeviceDetectionInitialized = false;
+        // this is TEMP remove it as soon as possible
+        private DevicesListViewSpeedControl devicesListViewEnableControl1;
 
         private bool _isManuallyStarted = false;
-        private bool _isNotProfitable = false;
-
-        //private bool _isSmaUpdated = false;
-
-        private double _factorTimeUnit = 1.0;
-
-        private readonly int _mainFormHeight = 0;
-        private readonly int _emtpyGroupPanelHeight = 0;
 
         public Form_Main()
         {
             InitializeComponent();
+            CenterToScreen();
             Icon = Properties.Resources.logo;
+            errorWarningProvider2.Icon = new IconEx(IconEx.SystemIcons.Warning, new Size(16, 16)).Icon; // SystemIcons.Warning;
+            labelWarningNotProfitableOrNoIntenret.Visible = false;
+            InitElevationWarning();
 
-            InitLocalization();
+            devicesListViewEnableControl1 = devicesMainBoard1.SpeedsControl;
+            FormHelpers.SubscribeAllControls(this);
 
-            ComputeDeviceManager.SystemSpecs.QueryAndLog();
-
-            // Log the computer's amount of Total RAM and Page File Size
-            var moc = new ManagementObjectSearcher("root\\CIMV2", "SELECT * FROM Win32_OperatingSystem").Get();
-            foreach (ManagementObject mo in moc)
+            // Hide plugins button and resize
+            if (MinerPluginsManager.IntegratedPluginsOnly)
             {
-                var totalRam = long.Parse(mo["TotalVisibleMemorySize"].ToString()) / 1024;
-                var pageFileSize = (long.Parse(mo["TotalVirtualMemorySize"].ToString()) / 1024) - totalRam;
-                Helpers.ConsolePrint("NICEHASH", "Total RAM: " + totalRam + "MB");
-                Helpers.ConsolePrint("NICEHASH", "Page File Size: " + pageFileSize + "MB");
+                this.buttonHelp.Location = this.buttonPlugins.Location;
+                this.buttonPlugins.Enabled = false;
+                this.buttonPlugins.Visible = false;
             }
 
-            R = new Random((int) DateTime.Now.Ticks);
+            Width = ConfigManager.GeneralConfig.MainFormSize.X;
+            Height = ConfigManager.GeneralConfig.MainFormSize.Y;
 
-            Text += " v" + Application.ProductVersion + BetaAlphaPostfixString;
+            Text = ApplicationStateManager.Title;
 
-            label_NotProfitable.Visible = false;
+            notifyIcon1.Icon = Properties.Resources.logo;
+            notifyIcon1.Text = Application.ProductName + " v" + Application.ProductVersion +
+                               "\nDouble-click to restore..";
+
+            linkLabelNewVersion.Text = "";
 
             InitMainConfigGuiData();
+            devicesMainBoard1.SecondPanelVisible = false;
+            labelDemoMode.DataBindings.AddSafeBinding("Visible", MiningState.Instance, nameof(MiningState.Instance.IsDemoMining), true, DataSourceUpdateMode.OnPropertyChanged);
+            labelDemoMode.BringToFront();
+            labelDemoMode.VisibleChanged += LabelDemoMode_VisibleChanged;
+            InitControlValidators();
+            FormHelpers.TranslateFormControls(this);
+        }
 
-            // for resizing
-            InitFlowPanelStart();
-
-            if (groupBox1.Size.Height > 0 && Size.Height > 0)
+        private void LabelDemoMode_VisibleChanged(object sender, EventArgs e)
+        {
+            if (labelDemoMode.Visible)
             {
-                _emtpyGroupPanelHeight = groupBox1.Size.Height;
-                _mainFormHeight = Size.Height - _emtpyGroupPanelHeight;
+                errorProvider1.SetError(textBoxBTCAddress, "");
+                errorProvider1.SetError(textBoxWorkerName, "");
             }
             else
             {
-                _emtpyGroupPanelHeight = 59;
-                _mainFormHeight = 330 - _emtpyGroupPanelHeight;
+                textBoxBTCAddress_Validate();
+                textBoxWorkerName_Validate();
             }
-            ClearRatesAll();
+            
         }
 
-        private void InitLocalization()
+        private void InitDataBindings()
+        {
+            comboBoxLocation.DataBindings.Add("SelectedIndex", ConfigManager.GeneralConfig, nameof(ConfigManager.GeneralConfig.ServiceLocation), false, DataSourceUpdateMode.OnPropertyChanged);
+            textBoxBTCAddress.DataBindings.AddSafeBinding("Text", ConfigManager.CredentialsSettings, nameof(ConfigManager.CredentialsSettings.BitcoinAddress), false, DataSourceUpdateMode.OnPropertyChanged);
+            textBoxWorkerName.DataBindings.AddSafeBinding("Text", ConfigManager.CredentialsSettings, nameof(ConfigManager.CredentialsSettings.WorkerName), false, DataSourceUpdateMode.OnPropertyChanged);
+
+            linkLabelCheckStats.DataBindings.AddSafeBinding("Enabled", ConfigManager.CredentialsSettings, nameof(ConfigManager.CredentialsSettings.IsCredentialsValid), false, DataSourceUpdateMode.OnPropertyChanged);
+
+            // mining /benchmarking
+            buttonPlugins.DataBindings.AddSafeBinding("Enabled", MiningState.Instance, nameof(MiningState.Instance.IsNotBenchmarkingOrMining), false, DataSourceUpdateMode.OnPropertyChanged);
+            textBoxBTCAddress.DataBindings.AddSafeBinding("Enabled", MiningState.Instance, nameof(MiningState.Instance.IsNotBenchmarkingOrMining), false, DataSourceUpdateMode.OnPropertyChanged);
+            textBoxWorkerName.DataBindings.AddSafeBinding("Enabled", MiningState.Instance, nameof(MiningState.Instance.IsNotBenchmarkingOrMining), false, DataSourceUpdateMode.OnPropertyChanged);
+            comboBoxLocation.DataBindings.AddSafeBinding("Enabled", MiningState.Instance, nameof(MiningState.Instance.IsNotBenchmarkingOrMining), false, DataSourceUpdateMode.OnPropertyChanged);
+            buttonBenchmark.DataBindings.AddSafeBinding("Enabled", MiningState.Instance, nameof(MiningState.Instance.IsNotBenchmarkingOrMining), false, DataSourceUpdateMode.OnPropertyChanged);
+            buttonSettings.DataBindings.AddSafeBinding("Enabled", MiningState.Instance, nameof(MiningState.Instance.IsNotBenchmarkingOrMining), false, DataSourceUpdateMode.OnPropertyChanged);
+            linkLabelAdminPrivs.DataBindings.AddSafeBinding("Enabled", MiningState.Instance, nameof(MiningState.Instance.IsNotBenchmarkingOrMining), false, DataSourceUpdateMode.OnPropertyChanged);
+            // start stop all
+            buttonStartMining.DataBindings.AddSafeBinding("Enabled", MiningState.Instance, nameof(MiningState.Instance.AnyDeviceStopped), false, DataSourceUpdateMode.OnPropertyChanged);
+            buttonStopMining.DataBindings.AddSafeBinding("Enabled", MiningState.Instance, nameof(MiningState.Instance.AnyDeviceRunning), false, DataSourceUpdateMode.OnPropertyChanged);
+
+            ////labelDemoMode.DataBindings.Add("Enabled", MiningState.Instance, nameof(MiningState.Instance.IsDemoMining), false, DataSourceUpdateMode.OnPropertyChanged);
+            //labelDemoMode.DataBindings.Add("Visible", MiningState.Instance, nameof(MiningState.Instance.IsDemoMining), true, DataSourceUpdateMode.OnPropertyChanged);
+            
+            devicesMainBoard1.DataBindings.AddSafeBinding(nameof(devicesMainBoard1.SecondPanelVisible), MiningState.Instance, nameof(MiningState.Instance.AnyDeviceRunning), false, DataSourceUpdateMode.OnPropertyChanged);
+        }
+
+        private void textBoxBTCAddress_Validate()
+        {
+            var trimmedBtcText = textBoxBTCAddress.Text.Trim();
+            var result = ApplicationStateManager.SetBTCIfValidOrDifferent(trimmedBtcText);
+            if (ApplicationStateManager.SetResult.INVALID == result)
+            {
+                errorProvider1.SetError(textBoxBTCAddress, Tr("Invalid Bitcoin address! NiceHash Miner Legacy will start mining in DEMO mode. In the DEMO mode, you can test run the miner and be able see how much you can earn using your computer. Would you like to continue in DEMO mode?\n\nDISCLAIMER: YOU WILL NOT EARN ANYTHING DURING DEMO MODE!"));
+            }
+            else
+            {
+                errorProvider1.SetError(textBoxBTCAddress, "");
+            }
+        }
+
+        private void textBoxWorkerName_Validate()
+        {
+            var trimmedWorkerNameText = textBoxWorkerName.Text.Trim();
+            var result = ApplicationStateManager.SetWorkerIfValidOrDifferent(trimmedWorkerNameText);
+            if (ApplicationStateManager.SetResult.INVALID == result)
+            {
+                errorProvider1.SetError(textBoxWorkerName, Tr("Invalid workername!\n\nPlease enter a valid workername (Aa-Zz, 0-9, up to 15 character long)."));
+            }
+            else
+            {
+                errorProvider1.SetError(textBoxWorkerName, "");
+            }
+        }
+
+        private void InitControlValidators()
+        {
+            textBoxBTCAddress.TextChanged += (s, e) => textBoxBTCAddress_Validate();
+            //textBoxBTCAddress.Validating += textBoxBTCAddress_TextChanged;
+            //textBoxBTCAddress.Validated += textBoxBTCAddress_TextChanged;
+
+            textBoxWorkerName.TextChanged += (s, e) => textBoxWorkerName_Validate();
+            //textBoxWorkerName.Validating += textBoxWorkerName_ValidateCorrect;
+            //textBoxWorkerName.Validated += textBoxWorkerName_ValidateCorrect;
+        }
+
+        void FormHelpers.ICustomTranslate.CustomTranslate()
         {
             MessageBoxManager.Unregister();
-            MessageBoxManager.Yes = International.GetText("Global_Yes");
-            MessageBoxManager.No = International.GetText("Global_No");
-            MessageBoxManager.OK = International.GetText("Global_OK");
-            MessageBoxManager.Cancel = International.GetText("Global_Cancel");
-            MessageBoxManager.Retry = International.GetText("Global_Retry");
+            MessageBoxManager.Yes = Tr("&Yes");
+            MessageBoxManager.No = Tr("&No");
+            MessageBoxManager.OK = Tr("&OK");
+            MessageBoxManager.Cancel = Tr("&Cancel");
+            MessageBoxManager.Retry = Tr("&Retry");
             MessageBoxManager.Register();
 
-            labelServiceLocation.Text = International.GetText("Service_Location") + ":";
-            {
-                var i = 0;
-                foreach (var loc in Globals.MiningLocation)
-                    comboBoxLocation.Items[i++] = International.GetText("LocationName_" + loc);
-            }
-            labelBitcoinAddress.Text = International.GetText("BitcoinAddress") + ":";
-            labelWorkerName.Text = International.GetText("WorkerName") + ":";
-
-            linkLabelCheckStats.Text = International.GetText("Form_Main_check_stats");
-            linkLabelChooseBTCWallet.Text = International.GetText("Form_Main_choose_bitcoin_wallet");
-
-            toolStripStatusLabelGlobalRateText.Text = International.GetText("Form_Main_global_rate") + ":";
+            //??? doesn't get translated if we don't translate it directly????
+            toolStripStatusLabelGlobalRateText.Text = Tr("Global rate:");
             toolStripStatusLabelBTCDayText.Text =
-                "BTC/" + International.GetText(ConfigManager.GeneralConfig.TimeUnit.ToString());
-            toolStripStatusLabelBalanceText.Text = (ExchangeRateApi.ActiveDisplayCurrency + "/") +
-                                                   International.GetText(
-                                                       ConfigManager.GeneralConfig.TimeUnit.ToString()) + "     " +
-                                                   International.GetText("Form_Main_balance") + ":";
+                "BTC/" + Tr(ConfigManager.GeneralConfig.TimeUnit.ToString());
+            toolStripStatusLabelBalanceText.Text = RatesAndStatsStates.Instance.LabelBalanceText;
 
             devicesListViewEnableControl1.InitLocale();
 
-            buttonBenchmark.Text = International.GetText("Form_Main_benchmark");
-            buttonSettings.Text = International.GetText("Form_Main_settings");
-            buttonStartMining.Text = International.GetText("Form_Main_start");
-            buttonStopMining.Text = International.GetText("Form_Main_stop");
-            buttonHelp.Text = International.GetText("Form_Main_help");
+            // this one here is probably redundant
+            labelDemoMode.Text = Tr("NiceHash Miner Legacy is running in DEMO mode!");
+            toolTip1.SetToolTip(labelDemoMode, Tr("You have not entered a bitcoin address. NiceHash Miner Legacy will start mining in DEMO mode. In the DEMO mode, you can test run the miner and be able see how much you can earn using your computer. Would you like to continue in DEMO mode?\n\nDISCLAIMER: YOU WILL NOT EARN ANYTHING DURING DEMO MODE!"));
 
-            label_NotProfitable.Text = International.GetText("Form_Main_MINING_NOT_PROFITABLE");
-            groupBox1.Text = International.GetText("Form_Main_Group_Device_Rates");
+            SetToolTip(Tr("User's bitcoin address for mining."),
+                textBoxBTCAddress, labelBitcoinAddress);
+
+            SetToolTip(Tr("To identify the user's computer."),
+                textBoxWorkerName, labelWorkerName);
+
+            SetToolTip(Tr("Sets the mining location. Choosing Hong Kong or Tokyo will add extra latency."),
+                comboBoxLocation, labelServiceLocation);
         }
 
+        private void SetToolTip(string text, params Control[] controls)
+        {
+            foreach (var control in controls)
+            {
+                toolTip1.SetToolTip(control, text);
+            }
+        }
+
+        private void InitElevationWarning()
+        {
+            var isEnabledFeature = false;
+            // Enable this only for new platform
+#if TESTNET || TESTNETDEV || PRODUCTION_NEW
+            isEnabledFeature = true;
+#endif
+            if (!Helpers.IsElevated && isEnabledFeature)
+            {
+                errorWarningProvider2.SetError(linkLabelAdminPrivs, Tr("Disabled NVIDIA power mode settings due to insufficient permissions. If you want to use this feature you need to run as Administrator."));
+                linkLabelAdminPrivs.Click += (s, e) =>
+                {
+                    var dialogResult = MessageBox.Show(Tr("Click yes if you with to run NiceHash Miner Legacy as Administrator."),
+                    Tr("Run as Administrator"),
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                    if (dialogResult == DialogResult.Yes)
+                        RunAsAdmin.SelfElevate();                    
+                };
+            }
+            else
+            {
+                linkLabelAdminPrivs.Visible = false;
+            }
+        }
+
+        // InitMainConfigGuiData gets called after settings are changed and whatnot but this is a crude and tightly coupled way of doing things
         private void InitMainConfigGuiData()
         {
-            if (ConfigManager.GeneralConfig.ServiceLocation >= 0 &&
-                ConfigManager.GeneralConfig.ServiceLocation < Globals.MiningLocation.Length)
-                comboBoxLocation.SelectedIndex = ConfigManager.GeneralConfig.ServiceLocation;
-            else
-                comboBoxLocation.SelectedIndex = 0;
-
-            textBoxBTCAddress.Text = ConfigManager.GeneralConfig.BitcoinAddress;
-            textBoxWorkerName.Text = ConfigManager.GeneralConfig.WorkerName;
-
+            textBoxBTCAddress.Text = ConfigManager.CredentialsSettings.BitcoinAddress;
+            textBoxWorkerName.Text = ConfigManager.CredentialsSettings.WorkerName;
             _showWarningNiceHashData = true;
-            _demoMode = false;
 
             // init active display currency after config load
             ExchangeRateApi.ActiveDisplayCurrency = ConfigManager.GeneralConfig.DisplayCurrency;
 
             // init factor for Time Unit
-            switch (ConfigManager.GeneralConfig.TimeUnit)
-            {
-                case TimeUnitType.Hour:
-                    _factorTimeUnit = 1.0 / 24.0;
-                    break;
-                case TimeUnitType.Day:
-                    _factorTimeUnit = 1;
-                    break;
-                case TimeUnitType.Week:
-                    _factorTimeUnit = 7;
-                    break;
-                case TimeUnitType.Month:
-                    _factorTimeUnit = 30;
-                    break;
-                case TimeUnitType.Year:
-                    _factorTimeUnit = 365;
-                    break;
-            }
+            TimeFactor.UpdateTimeUnit(ConfigManager.GeneralConfig.TimeUnit);
 
             toolStripStatusLabelBalanceDollarValue.Text = "(" + ExchangeRateApi.ActiveDisplayCurrency + ")";
-            toolStripStatusLabelBalanceText.Text = (ExchangeRateApi.ActiveDisplayCurrency + "/") +
-                                                   International.GetText(
-                                                       ConfigManager.GeneralConfig.TimeUnit.ToString()) + "     " +
-                                                   International.GetText("Form_Main_balance") + ":";
-            BalanceCallback(null, null); // update currency changes
+            toolStripStatusLabelBalanceText.Text = RatesAndStatsStates.Instance.LabelBalanceText;
 
-            if (_isDeviceDetectionInitialized)
-            {
-                devicesListViewEnableControl1.ResetComputeDevices(ComputeDeviceManager.Available.Devices);
-            }
+
+            devicesListViewEnableControl1.SetPayingColumns();
         }
-
-        public void AfterLoadComplete()
-        {
-            _loadingScreen = null;
-            Enabled = true;
-
-            _idleCheck = new Timer();
-            _idleCheck.Tick += IdleCheck_Tick;
-            _idleCheck.Interval = 500;
-            _idleCheck.Start();
-        }
-
-
-        private void IdleCheck_Tick(object sender, EventArgs e)
+        
+        // TODO this has nothing to do with Mian_Form
+        private void IdleCheck(object sender, IdleChangedEventArgs e)
         {
             if (!ConfigManager.GeneralConfig.StartMiningWhenIdle || _isManuallyStarted) return;
 
-            var msIdle = Helpers.GetIdleTime();
-
-            if (_minerStatsCheck.Enabled)
+            // TODO set is mining here
+            if (MiningState.Instance.IsCurrentlyMining)
             {
-                if (msIdle < (ConfigManager.GeneralConfig.MinIdleSeconds * 1000))
+                if (!e.IsIdle)
                 {
-                    StopMining();
-                    Helpers.ConsolePrint("NICEHASH", "Resumed from idling");
+                    ApplicationStateManager.StopAllDevice();
+                    Logger.Info("NICEHASH", "Resumed from idling");
                 }
             }
-            else
+            else if (ApplicationStateManager.CurrentForm == ApplicationStateManager.CurrentFormState.Main && e.IsIdle)
             {
-                if (_benchmarkForm == null && (msIdle > (ConfigManager.GeneralConfig.MinIdleSeconds * 1000)))
-                {
-                    Helpers.ConsolePrint("NICEHASH", "Entering idling state");
-                    if (StartMining(false) != StartMiningReturnType.StartMining)
-                    {
-                        StopMining();
-                    }
-                }
-            }
-        }
-
-        // This is a single shot _benchmarkTimer
-        private void StartupTimer_Tick(object sender, EventArgs e)
-        {
-            _startupTimer.Stop();
-            _startupTimer = null;
-
-            // Internals Init
-            // TODO add loading step
-            MinersSettingsManager.Init();
-
-            if (!Helpers.Is45NetOrHigher())
-            {
-                MessageBox.Show(International.GetText("NET45_Not_Installed_msg"),
-                    International.GetText("Warning_with_Exclamation"),
-                    MessageBoxButtons.OK);
-
-                Close();
-                return;
-            }
-
-            if (!Helpers.Is64BitOperatingSystem)
-            {
-                MessageBox.Show(International.GetText("Form_Main_x64_Support_Only"),
-                    International.GetText("Warning_with_Exclamation"),
-                    MessageBoxButtons.OK);
-
-                Close();
-                return;
-            }
-
-            // 3rdparty miners check scope #1
-            {
-                // check if setting set
-                if (ConfigManager.GeneralConfig.Use3rdPartyMiners == Use3rdPartyMiners.NOT_SET)
-                {
-                    // Show TOS
-                    Form tos = new Form_3rdParty_TOS();
-                    tos.ShowDialog(this);
-                }
-            }
-
-            // Query Available ComputeDevices
-            ComputeDeviceManager.Query.QueryDevices(_loadingScreen);
-            _isDeviceDetectionInitialized = true;
-
-            /////////////////////////////////////////////
-            /////// from here on we have our devices and Miners initialized
-            ConfigManager.AfterDeviceQueryInitialization();
-            _loadingScreen.IncreaseLoadCounterAndMessage(International.GetText("Form_Main_loadtext_SaveConfig"));
-
-            // All devices settup should be initialized in AllDevices
-            devicesListViewEnableControl1.ResetComputeDevices(ComputeDeviceManager.Available.Devices);
-            // set properties after
-            devicesListViewEnableControl1.SaveToGeneralConfig = true;
-
-            _loadingScreen.IncreaseLoadCounterAndMessage(
-                International.GetText("Form_Main_loadtext_CheckLatestVersion"));
-
-            _minerStatsCheck = new Timer();
-            _minerStatsCheck.Tick += MinerStatsCheck_Tick;
-            _minerStatsCheck.Interval = ConfigManager.GeneralConfig.MinerAPIQueryInterval * 1000;
-
-            //_smaMinerCheck = new Timer();
-            //_smaMinerCheck.Tick += SMAMinerCheck_Tick;
-            //_smaMinerCheck.Interval = ConfigManager.GeneralConfig.SwitchMinSecondsFixed * 1000 +
-            //                          R.Next(ConfigManager.GeneralConfig.SwitchMinSecondsDynamic * 1000);
-            //if (ComputeDeviceManager.Group.ContainsAmdGpus)
-            //{
-            //    _smaMinerCheck.Interval =
-            //        (ConfigManager.GeneralConfig.SwitchMinSecondsAMD +
-            //         ConfigManager.GeneralConfig.SwitchMinSecondsFixed) * 1000 +
-            //        R.Next(ConfigManager.GeneralConfig.SwitchMinSecondsDynamic * 1000);
-            //}
-
-            _loadingScreen.IncreaseLoadCounterAndMessage(International.GetText("Form_Main_loadtext_GetNiceHashSMA"));
-            // Init ws connection
-            NiceHashStats.OnBalanceUpdate += BalanceCallback;
-            NiceHashStats.OnSmaUpdate += SmaCallback;
-            NiceHashStats.OnVersionUpdate += VersionUpdateCallback;
-            NiceHashStats.OnConnectionLost += ConnectionLostCallback;
-            NiceHashStats.OnConnectionEstablished += ConnectionEstablishedCallback;
-            NiceHashStats.OnVersionBurn += VersionBurnCallback;
-            NiceHashStats.OnExchangeUpdate += ExchangeCallback;
-            NiceHashStats.StartConnection(Links.NhmSocketAddress);
-
-            // increase timeout
-            if (Globals.IsFirstNetworkCheckTimeout)
-            {
-                while (!Helpers.WebRequestTestGoogle() && Globals.FirstNetworkCheckTimeoutTries > 0)
-                {
-                    --Globals.FirstNetworkCheckTimeoutTries;
-                }
-            }
-
-            _loadingScreen.IncreaseLoadCounterAndMessage(International.GetText("Form_Main_loadtext_GetBTCRate"));
-
-            //// Don't start timer if socket is giving data
-            //if (ExchangeRateApi.ExchangesFiat == null)
-            //{
-            //    // Wait a bit and check again
-            //    Thread.Sleep(1000);
-            //    if (ExchangeRateApi.ExchangesFiat == null)
-            //    {
-            //        Helpers.ConsolePrint("NICEHASH", "No exchange from socket yet, getting manually");
-            //        _bitcoinExchangeCheck = new Timer();
-            //        _bitcoinExchangeCheck.Tick += BitcoinExchangeCheck_Tick;
-            //        _bitcoinExchangeCheck.Interval = 1000 * 3601; // every 1 hour and 1 second
-            //        _bitcoinExchangeCheck.Start();
-            //        BitcoinExchangeCheck_Tick(null, null);
-            //    }
-            //}
-
-            _loadingScreen.IncreaseLoadCounterAndMessage(
-                International.GetText("Form_Main_loadtext_SetEnvironmentVariable"));
-            Helpers.SetDefaultEnvironmentVariables();
-
-            _loadingScreen.IncreaseLoadCounterAndMessage(
-                International.GetText("Form_Main_loadtext_SetWindowsErrorReporting"));
-
-            Helpers.DisableWindowsErrorReporting(ConfigManager.GeneralConfig.DisableWindowsErrorReporting);
-
-            _loadingScreen.IncreaseLoadCounter();
-            if (ConfigManager.GeneralConfig.NVIDIAP0State)
-            {
-                _loadingScreen.SetInfoMsg(International.GetText("Form_Main_loadtext_NVIDIAP0State"));
-                Helpers.SetNvidiaP0State();
-            }
-
-            _loadingScreen.FinishLoad();
-
-            var runVCRed = !MinersExistanceChecker.IsMinersBinsInit() && !ConfigManager.GeneralConfig.DownloadInit;
-            // standard miners check scope
-            {
-                // check if download needed
-                if (!MinersExistanceChecker.IsMinersBinsInit() && !ConfigManager.GeneralConfig.DownloadInit)
-                {
-                    var downloadUnzipForm =
-                        new Form_Loading(new MinersDownloader(MinersDownloadManager.StandardDlSetup));
-                    SetChildFormCenter(downloadUnzipForm);
-                    downloadUnzipForm.ShowDialog();
-                }
-                // check if files are mising
-                if (!MinersExistanceChecker.IsMinersBinsInit())
-                {
-                    var result = MessageBox.Show(International.GetText("Form_Main_bins_folder_files_missing"),
-                        International.GetText("Warning_with_Exclamation"),
-                        MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                    if (result == DialogResult.Yes)
-                    {
-                        ConfigManager.GeneralConfig.DownloadInit = false;
-                        ConfigManager.GeneralConfigFileCommit();
-                        var pHandle = new Process
-                        {
-                            StartInfo =
-                            {
-                                FileName = Application.ExecutablePath
-                            }
-                        };
-                        pHandle.Start();
-                        Close();
-                        return;
-                    }
-                }
-                else if (!ConfigManager.GeneralConfig.DownloadInit)
-                {
-                    // all good
-                    ConfigManager.GeneralConfig.DownloadInit = true;
-                    ConfigManager.GeneralConfigFileCommit();
-                }
-            }
-            // 3rdparty miners check scope #2
-            {
-                // check if download needed
-                if (ConfigManager.GeneralConfig.Use3rdPartyMiners == Use3rdPartyMiners.YES)
-                {
-                    if (!MinersExistanceChecker.IsMiners3rdPartyBinsInit() &&
-                        !ConfigManager.GeneralConfig.DownloadInit3rdParty)
-                    {
-                        var download3rdPartyUnzipForm =
-                            new Form_Loading(new MinersDownloader(MinersDownloadManager.ThirdPartyDlSetup));
-                        SetChildFormCenter(download3rdPartyUnzipForm);
-                        download3rdPartyUnzipForm.ShowDialog();
-                    }
-                    // check if files are mising
-                    if (!MinersExistanceChecker.IsMiners3rdPartyBinsInit())
-                    {
-                        var result = MessageBox.Show(International.GetText("Form_Main_bins_folder_files_missing"),
-                            International.GetText("Warning_with_Exclamation"),
-                            MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                        if (result == DialogResult.Yes)
-                        {
-                            ConfigManager.GeneralConfig.DownloadInit3rdParty = false;
-                            ConfigManager.GeneralConfigFileCommit();
-                            var pHandle = new Process
-                            {
-                                StartInfo =
-                                {
-                                    FileName = Application.ExecutablePath
-                                }
-                            };
-                            pHandle.Start();
-                            Close();
-                            return;
-                        }
-                    }
-                    else if (!ConfigManager.GeneralConfig.DownloadInit3rdParty)
-                    {
-                        // all good
-                        ConfigManager.GeneralConfig.DownloadInit3rdParty = true;
-                        ConfigManager.GeneralConfigFileCommit();
-                    }
-                }
-            }
-
-            if (runVCRed)
-            {
-                Helpers.InstallVcRedist();
-            }
-
-
-            if (ConfigManager.GeneralConfig.AutoStartMining)
-            {
-                // well this is started manually as we want it to start at runtime
-                _isManuallyStarted = true;
+                Logger.Info("NICEHASH", "Entering idling state");
                 if (StartMining(false) != StartMiningReturnType.StartMining)
                 {
-                    _isManuallyStarted = false;
-                    StopMining();
+                    ApplicationStateManager.StopAllDevice();
                 }
             }
         }
@@ -471,329 +272,96 @@ namespace NiceHashMiner
             form.Location = new Point(Location.X + (Width - form.Width) / 2, Location.Y + (Height - form.Height) / 2);
         }
 
-        private void Form_Main_Shown(object sender, EventArgs e)
+        private async void Form_Main_Shown(object sender, EventArgs e)
         {
-            // general loading indicator
-            const int totalLoadSteps = 11;
-            _loadingScreen = new Form_Loading(this,
-                International.GetText("Form_Loading_label_LoadingText"),
-                International.GetText("Form_Main_loadtext_CPU"), totalLoadSteps);
-            SetChildFormCenter(_loadingScreen);
-            _loadingScreen.Show();
+            //// TODO temporary hooks
+            ApplicationStateManager._ratesComunication = devicesListViewEnableControl1;
+            // handle these callbacks differently
+            NiceHashStats.OnConnectionLost += ConnectionLostCallback;
+            NiceHashStats.OnExchangeUpdate += UpdateExchange;
 
-            _startupTimer = new Timer();
-            _startupTimer.Tick += StartupTimer_Tick;
-            _startupTimer.Interval = 200;
-            _startupTimer.Start();
-        }
-
-//        [Obsolete("Deprecated in favour of AlgorithmSwitchingManager timer")]
-//       private async void SMAMinerCheck_Tick(object sender, EventArgs e)
-//        {
-//            _smaMinerCheck.Interval = ConfigManager.GeneralConfig.SwitchMinSecondsFixed * 1000 +
-//                                      R.Next(ConfigManager.GeneralConfig.SwitchMinSecondsDynamic * 1000);
-//            if (ComputeDeviceManager.Group.ContainsAmdGpus)
-//            {
-//                _smaMinerCheck.Interval =
-//                    (ConfigManager.GeneralConfig.SwitchMinSecondsAMD +
-//                     ConfigManager.GeneralConfig.SwitchMinSecondsFixed) * 1000 +
-//                    R.Next(ConfigManager.GeneralConfig.SwitchMinSecondsDynamic * 1000);
-//            }
-
-//#if (SWITCH_TESTING)
-//            SMAMinerCheck.Interval = MiningDevice.SMAMinerCheckInterval;
-//#endif
-//            if (_isSmaUpdated)
-//            {
-//                // Don't bother checking for new profits unless SMA has changed
-//                _isSmaUpdated = false;
-//                await MinersManager.SwichMostProfitableGroupUpMethod();
-//            }
-//        }
-
-        private static async void MinerStatsCheck_Tick(object sender, EventArgs e)
-        {
-            await MinersManager.MinerStatsCheck();
-        }
-
-        private static void ComputeDevicesCheckTimer_Tick(object sender, EventArgs e)
-        {
-            if (ComputeDeviceManager.Query.CheckVideoControllersCountMismath())
+            foreach (Control c in Controls)
             {
-                // less GPUs than before, ACT!
-                try
+                c.Enabled = false;
+            }
+
+            using (var loadingControl = new StartupLoadingControl(Tr("Loading, please wait...")))
+            {
+                Controls.Add(loadingControl);
+                var location = new Point((Width - loadingControl.Width) / 2, (int)((Height - loadingControl.Height) * 0.3));
+                loadingControl.Location = location;
+                loadingControl.BringToFront();
+
+                var progress = new Progress<(string loadMessageText, int perc)>(p =>
                 {
-                    var onGpusLost = new ProcessStartInfo(Directory.GetCurrentDirectory() + "\\OnGPUsLost.bat")
-                    {
-                        WindowStyle = ProcessWindowStyle.Minimized
-                    };
-                    Process.Start(onGpusLost);
-                }
-                catch (Exception ex)
-                {
-                    Helpers.ConsolePrint("NICEHASH", "OnGPUsMismatch.bat error: " + ex.Message);
-                }
-            }
-        }
-
-        private void InitFlowPanelStart()
-        {
-            flowLayoutPanelRates.Controls.Clear();
-            // add for every cdev a 
-            foreach (var cdev in ComputeDeviceManager.Available.Devices)
-            {
-                if (cdev.Enabled)
-                {
-                    var newGroupProfitControl = new GroupProfitControl
-                    {
-                        Visible = false
-                    };
-                    flowLayoutPanelRates.Controls.Add(newGroupProfitControl);
-                }
-            }
-        }
-
-        public void ClearRatesAll()
-        {
-            HideNotProfitable();
-            ClearRates(-1);
-        }
-
-        public void ClearRates(int groupCount)
-        {
-            if (InvokeRequired)
-            {
-                Invoke((Action) delegate { ClearRates(groupCount); });
-                return;
-            }
-            if (_flowLayoutPanelVisibleCount != groupCount)
-            {
-                _flowLayoutPanelVisibleCount = groupCount;
-                // hide some Controls
-                var hideIndex = 0;
-                foreach (var control in flowLayoutPanelRates.Controls)
-                {
-                    ((GroupProfitControl) control).Visible = hideIndex < groupCount;
-                    ++hideIndex;
-                }
-            }
-            _flowLayoutPanelRatesIndex = 0;
-            var visibleGroupCount = 1;
-            if (groupCount > 0) visibleGroupCount += groupCount;
-
-            var groupBox1Height = _emtpyGroupPanelHeight;
-            if (flowLayoutPanelRates.Controls.Count > 0)
-            {
-                var control = flowLayoutPanelRates.Controls[0];
-                var panelHeight = ((GroupProfitControl) control).Size.Height * 1.2f;
-                groupBox1Height = (int) ((visibleGroupCount) * panelHeight);
-            }
-
-            groupBox1.Size = new Size(groupBox1.Size.Width, groupBox1Height);
-            // set new height
-            Size = new Size(Size.Width, _mainFormHeight + groupBox1Height);
-        }
-
-        public void AddRateInfo(string groupName, string deviceStringInfo, ApiData iApiData, double paying,
-            bool isApiGetException)
-        {
-            var apiGetExceptionString = isApiGetException ? "**" : "";
-
-            var speedString =
-                Helpers.FormatDualSpeedOutput(iApiData.Speed, iApiData.SecondarySpeed, iApiData.AlgorithmID) +
-                iApiData.AlgorithmName + apiGetExceptionString;
-            var rateBtcString = FormatPayingOutput(paying);
-            var rateCurrencyString = ExchangeRateApi
-                                         .ConvertToActiveCurrency(paying * ExchangeRateApi.GetUsdExchangeRate() * _factorTimeUnit)
-                                         .ToString("F2", CultureInfo.InvariantCulture)
-                                     + $" {ExchangeRateApi.ActiveDisplayCurrency}/" +
-                                     International.GetText(ConfigManager.GeneralConfig.TimeUnit.ToString());
-
-            try
-            {
-                // flowLayoutPanelRatesIndex may be OOB, so catch
-                ((GroupProfitControl) flowLayoutPanelRates.Controls[_flowLayoutPanelRatesIndex++])
-                    .UpdateProfitStats(groupName, deviceStringInfo, speedString, rateBtcString, rateCurrencyString);
-            }
-            catch { }
-
-            UpdateGlobalRate();
-        }
-
-        public void ShowNotProfitable(string msg)
-        {
-            if (ConfigManager.GeneralConfig.UseIFTTT)
-            {
-                if (!_isNotProfitable)
-                {
-                    Ifttt.PostToIfttt("nicehash", msg);
-                    _isNotProfitable = true;
-                }
-            }
-
-            if (InvokeRequired)
-            {
-                Invoke((Action) delegate
-                {
-                    ShowNotProfitable(msg);
+                    loadingControl.Progress = p.perc;
+                    loadingControl.LoadMessageText = p.loadMessageText;
                 });
-            }
-            else
-            {
-                label_NotProfitable.Visible = true;
-                label_NotProfitable.Text = msg;
-                label_NotProfitable.Invalidate();
-            }
-        }
 
-        public void HideNotProfitable()
-        {
-            if (ConfigManager.GeneralConfig.UseIFTTT)
-            {
-                if (_isNotProfitable)
+                var progressDownload = new Progress<(string loadMessageText, int perc)>(p =>
                 {
-                    Ifttt.PostToIfttt("nicehash", "Mining is once again profitable and has resumed.");
-                    _isNotProfitable = false;
+                    loadingControl.ProgressSecond = p.perc;
+                    loadingControl.LoadMessageTextSecond = p.loadMessageText;
+                });
+                await ApplicationStateManager.InitializeManagersAndMiners(loadingControl, progress, progressDownload);
+            }
+            devicesListViewEnableControl1.SetComputeDevices(AvailableDevices.Devices.ToList());
+
+            foreach (Control c in Controls)
+            {
+                c.Enabled = true;
+            }
+
+            // Data bindings
+            InitDataBindings();
+            textBoxBTCAddress_Validate();
+            textBoxWorkerName_Validate();
+
+            if (ConfigManager.GeneralConfig.AutoStartMining)
+            {
+                // well this is started manually as we want it to start at runtime
+                _isManuallyStarted = true;
+                if (StartMining(false) != StartMiningReturnType.StartMining)
+                {
+                    _isManuallyStarted = false;
+                    ApplicationStateManager.StopAllDevice();
                 }
             }
-
-            if (InvokeRequired)
-            {
-                Invoke((Action) HideNotProfitable);
-            }
-            else
-            {
-                label_NotProfitable.Visible = false;
-                label_NotProfitable.Invalidate();
-            }
         }
 
-        public void ForceMinerStatsUpdate()
+        private void UpdateGlobalRate(double totalRate)
         {
-            try
-            {
-                BeginInvoke((Action) (() =>
-                {
-                    MinerStatsCheck_Tick(null, null);
-                }));
-            }
-            catch (Exception e)
-            {
-                Helpers.ConsolePrint("NiceHash", e.ToString());
-            }
-        }
+            var factorTimeUnit = TimeFactor.TimeUnit;
+            var scaleBTC = ConfigManager.GeneralConfig.AutoScaleBTCValues && totalRate < 0.1;
+            var totalDisplayRate = totalRate * factorTimeUnit * (scaleBTC ? 1000 : 1);
+            var displayTimeUnit = Tr(ConfigManager.GeneralConfig.TimeUnit.ToString());
 
-        private void UpdateGlobalRate()
-        {
-            var totalRate = MinersManager.GetTotalRate();
+            toolStripStatusLabelBTCDayText.Text = scaleBTC ? $"mBTC/{displayTimeUnit}" : $"BTC/{displayTimeUnit}";
+            toolStripStatusLabelGlobalRateValue.Text = totalDisplayRate.ToString(scaleBTC ? "F5" : "F6", CultureInfo.InvariantCulture);
 
-            if (ConfigManager.GeneralConfig.AutoScaleBTCValues && totalRate < 0.1)
-            {
-                toolStripStatusLabelBTCDayText.Text =
-                    "mBTC/" + International.GetText(ConfigManager.GeneralConfig.TimeUnit.ToString());
-                toolStripStatusLabelGlobalRateValue.Text =
-                    (totalRate * 1000 * _factorTimeUnit).ToString("F5", CultureInfo.InvariantCulture);
-            }
-            else
-            {
-                toolStripStatusLabelBTCDayText.Text =
-                    "BTC/" + International.GetText(ConfigManager.GeneralConfig.TimeUnit.ToString());
-                toolStripStatusLabelGlobalRateValue.Text =
-                    (totalRate * _factorTimeUnit).ToString("F6", CultureInfo.InvariantCulture);
-            }
 
             toolStripStatusLabelBTCDayValue.Text = ExchangeRateApi
-                .ConvertToActiveCurrency((totalRate * _factorTimeUnit * ExchangeRateApi.GetUsdExchangeRate()))
+                .ConvertToActiveCurrency((totalRate * factorTimeUnit * ExchangeRateApi.GetUsdExchangeRate()))
                 .ToString("F2", CultureInfo.InvariantCulture);
-            toolStripStatusLabelBalanceText.Text = (ExchangeRateApi.ActiveDisplayCurrency + "/") +
-                                                   International.GetText(
-                                                       ConfigManager.GeneralConfig.TimeUnit.ToString()) + "     " +
-                                                   International.GetText("Form_Main_balance") + ":";
+            toolStripStatusLabelBalanceText.Text = RatesAndStatsStates.Instance.LabelBalanceText;
         }
 
-
-        private void BalanceCallback(object sender, EventArgs e)
+        private void UpdateExchange(object sender, EventArgs e)
         {
-            Helpers.ConsolePrint("NICEHASH", "Balance update");
-            var balance = NiceHashStats.Balance;
-            if (balance > 0)
+            FormHelpers.SafeInvoke(this, () =>
             {
-                if (ConfigManager.GeneralConfig.AutoScaleBTCValues && balance < 0.1)
+                var br = ExchangeRateApi.GetUsdExchangeRate();
+                var currencyRate = Tr("N/A");
+                if (br > 0)
                 {
-                    toolStripStatusLabelBalanceBTCCode.Text = "mBTC";
-                    toolStripStatusLabelBalanceBTCValue.Text =
-                        (balance * 1000).ToString("F5", CultureInfo.InvariantCulture);
-                }
-                else
-                {
-                    toolStripStatusLabelBalanceBTCCode.Text = "BTC";
-                    toolStripStatusLabelBalanceBTCValue.Text = balance.ToString("F6", CultureInfo.InvariantCulture);
+                    currencyRate = ExchangeRateApi.ConvertToActiveCurrency(br).ToString("F2");
                 }
 
-                //Helpers.ConsolePrint("CurrencyConverter", "Using CurrencyConverter" + ConfigManager.Instance.GeneralConfig.DisplayCurrency);
-                var amount = (balance * ExchangeRateApi.GetUsdExchangeRate());
-                amount = ExchangeRateApi.ConvertToActiveCurrency(amount);
-                toolStripStatusLabelBalanceDollarText.Text = amount.ToString("F2", CultureInfo.InvariantCulture);
-                toolStripStatusLabelBalanceDollarValue.Text = $"({ExchangeRateApi.ActiveDisplayCurrency})";
-            }
+                toolTip1.SetToolTip(statusStrip1, $"1 BTC = {currencyRate} {ExchangeRateApi.ActiveDisplayCurrency}");
+
+                Logger.Info("NICEHASH", $"Current Bitcoin rate: {br.ToString("F2", CultureInfo.InvariantCulture)}");
+            });
         }
-
-
-        //private void BitcoinExchangeCheck_Tick(object sender, EventArgs e)
-        //{
-        //    Helpers.ConsolePrint("NICEHASH", "Bitcoin rate get");
-        //    ExchangeRateApi.UpdateApi(textBoxWorkerName.Text.Trim());
-        //    UpdateExchange();
-        //}
-
-        private void ExchangeCallback(object sender, EventArgs e)
-        {
-            //// We are getting data from socket so stop checking manually
-            //_bitcoinExchangeCheck?.Stop();
-            //Helpers.ConsolePrint("NICEHASH", "Bitcoin rate get");
-            if (InvokeRequired)
-            {
-                Invoke((MethodInvoker) UpdateExchange);
-            }
-            else
-            {
-                UpdateExchange();
-            }
-        }
-
-        private void UpdateExchange()
-        {
-            var br = ExchangeRateApi.GetUsdExchangeRate();
-            var currencyRate = International.GetText("BenchmarkRatioRateN_A");
-            if (br > 0)
-            {
-                currencyRate = ExchangeRateApi.ConvertToActiveCurrency(br).ToString("F2");
-            }
-
-            toolTip1.SetToolTip(statusStrip1, $"1 BTC = {currencyRate} {ExchangeRateApi.ActiveDisplayCurrency}");
-
-            Helpers.ConsolePrint("NICEHASH",
-                "Current Bitcoin rate: " + br.ToString("F2", CultureInfo.InvariantCulture));
-        }
-
-        private void SmaCallback(object sender, EventArgs e)
-        {
-            Helpers.ConsolePrint("NICEHASH", "SMA Update");
-            //_isSmaUpdated = true;
-        }
-
-        private void VersionBurnCallback(object sender, SocketEventArgs e)
-        {
-            BeginInvoke((Action) (() =>
-            {
-                StopMining();
-                _benchmarkForm?.StopBenchmark();
-                var dialogResult = MessageBox.Show(e.Message, International.GetText("Error_with_Exclamation"),
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                Application.Exit();
-            }));
-        }
-
 
         private void ConnectionLostCallback(object sender, EventArgs e)
         {
@@ -801,8 +369,8 @@ namespace NiceHashMiner
                 _showWarningNiceHashData)
             {
                 _showWarningNiceHashData = false;
-                var dialogResult = MessageBox.Show(International.GetText("Form_Main_msgbox_NoInternetMsg"),
-                    International.GetText("Form_Main_msgbox_NoInternetTitle"),
+                var dialogResult = MessageBox.Show(Tr("NiceHash Miner Legacy requires internet connection to run. Please ensure that you are connected to the internet before running NiceHash Miner Legacy. Would you like to continue?"),
+                    Tr("Check internet connection"),
                     MessageBoxButtons.YesNo, MessageBoxIcon.Error);
 
                 if (dialogResult == DialogResult.Yes)
@@ -812,105 +380,28 @@ namespace NiceHashMiner
             }
         }
 
-        private void ConnectionEstablishedCallback(object sender, EventArgs e)
-        {
-            // send credentials
-            NiceHashStats.SetCredentials(textBoxBTCAddress.Text.Trim(), textBoxWorkerName.Text.Trim());
-        }
-
-        private void VersionUpdateCallback(object sender, EventArgs e)
-        {
-            var ver = NiceHashStats.Version;
-            if (ver == null) return;
-
-            var programVersion = new Version(Application.ProductVersion);
-            var onlineVersion = new Version(ver);
-            var ret = programVersion.CompareTo(onlineVersion);
-
-            if (ret < 0 || (ret == 0 && BetaAlphaPostfixString != ""))
-            {
-                SetVersionLabel(string.Format(International.GetText("Form_Main_new_version_released"), ver));
-                _visitUrlNew = Links.VisitUrlNew + ver;
-            }
-        }
-
-        private delegate void SetVersionLabelCallback(string text);
-
-        private void SetVersionLabel(string text)
-        {
-            if (linkLabelNewVersion.InvokeRequired)
-            {
-                var d = new SetVersionLabelCallback(SetVersionLabel);
-                Invoke(d, new object[] {text});
-            }
-            else
-            {
-                linkLabelNewVersion.Text = text;
-            }
-        }
-
-        private bool VerifyMiningAddress(bool showError)
-        {
-            if (!BitcoinAddress.ValidateBitcoinAddress(textBoxBTCAddress.Text.Trim()) && showError)
-            {
-                var result = MessageBox.Show(International.GetText("Form_Main_msgbox_InvalidBTCAddressMsg"),
-                    International.GetText("Error_with_Exclamation"),
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Error);
-
-                if (result == DialogResult.Yes)
-                    Process.Start(Links.NhmBtcWalletFaq);
-
-                textBoxBTCAddress.Focus();
-                return false;
-            }
-            if (!BitcoinAddress.ValidateWorkerName(textBoxWorkerName.Text.Trim()) && showError)
-            {
-                var result = MessageBox.Show(International.GetText("Form_Main_msgbox_InvalidWorkerNameMsg"),
-                    International.GetText("Error_with_Exclamation"),
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-                textBoxWorkerName.Focus();
-                return false;
-            }
-
-            return true;
-        }
-
         private void LinkLabelCheckStats_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            if (!VerifyMiningAddress(true)) return;
-
-            Process.Start(Links.CheckStats + textBoxBTCAddress.Text.Trim());
-        }
-
-
-        private void LinkLabelChooseBTCWallet_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
-        {
-            Process.Start(Links.NhmBtcWalletFaq);
+            if (ConfigManager.CredentialsSettings.IsCredentialsValid == false) return;
+            ApplicationStateManager.VisitMiningStatsPage();
         }
 
         private void LinkLabelNewVersion_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            Process.Start(_visitUrlNew);
-        }
-
-
-        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            MinersManager.StopAllMiners();
-
-            MessageBoxManager.Unregister();
+            ApplicationStateManager.VisitNewVersionUrl();
         }
 
         private void ButtonBenchmark_Click(object sender, EventArgs e)
         {
-            ConfigManager.GeneralConfig.ServiceLocation = comboBoxLocation.SelectedIndex;
-
-            _benchmarkForm = new Form_Benchmark();
-            SetChildFormCenter(_benchmarkForm);
-            _benchmarkForm.ShowDialog();
-            var startMining = _benchmarkForm.StartMining;
-            _benchmarkForm = null;
+            bool startMining = false;
+            using (var benchmarkForm = new Form_Benchmark())
+            {
+                SetChildFormCenter(benchmarkForm);
+                ApplicationStateManager.CurrentForm = ApplicationStateManager.CurrentFormState.Benchmark;
+                benchmarkForm.ShowDialog();
+                ApplicationStateManager.CurrentForm = ApplicationStateManager.CurrentFormState.Main;
+                startMining = benchmarkForm.StartMiningOnFinish;
+            }
 
             InitMainConfigGuiData();
             if (startMining)
@@ -922,31 +413,30 @@ namespace NiceHashMiner
 
         private void ButtonSettings_Click(object sender, EventArgs e)
         {
-            var settings = new Form_Settings();
-            SetChildFormCenter(settings);
-            settings.ShowDialog();
+            using (var settings = new Form_Settings())
+            {
+                SetChildFormCenter(settings);
+                ApplicationStateManager.CurrentForm = ApplicationStateManager.CurrentFormState.Settings;
+                settings.ShowDialog();
+                ApplicationStateManager.CurrentForm = ApplicationStateManager.CurrentFormState.Main;
 
-            if (settings.IsChange && settings.IsChangeSaved && settings.IsRestartNeeded)
-            {
-                MessageBox.Show(
-                    International.GetText("Form_Main_Restart_Required_Msg"),
-                    International.GetText("Form_Main_Restart_Required_Title"),
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                var pHandle = new Process
+                if (settings.IsRestartNeeded)
                 {
-                    StartInfo =
+                    if (!settings.SetDefaults)
                     {
-                        FileName = Application.ExecutablePath
+                        MessageBox.Show(
+                        Tr("Settings change requires NiceHash Miner Legacy to restart."),
+                        Tr("Restart Notice"),
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
-                };
-                pHandle.Start();
-                Close();
+                    ApplicationStateManager.RestartProgram();
+                    return;
+                }
             }
-            else if (settings.IsChange && settings.IsChangeSaved)
-            {
-                InitLocalization();
-                InitMainConfigGuiData();
-            }
+            FormHelpers.TranslateFormControls(this);
+            InitMainConfigGuiData();
+            // TODO check this later
+            IdleCheckManager.StartIdleCheck(ConfigManager.GeneralConfig.IdleCheckType, IdleCheck);
         }
 
         private void ButtonStartMining_Click(object sender, EventArgs e)
@@ -955,34 +445,18 @@ namespace NiceHashMiner
             if (StartMining(true) == StartMiningReturnType.ShowNoMining)
             {
                 _isManuallyStarted = false;
-                StopMining();
-                MessageBox.Show(International.GetText("Form_Main_StartMiningReturnedFalse"),
-                    International.GetText("Warning_with_Exclamation"),
+                ApplicationStateManager.StopAllDevice();
+                MessageBox.Show(Tr("NiceHash Miner Legacy cannot start mining. Make sure you have at least one enabled device that has at least one enabled and benchmarked algorithm."),
+                    Tr("Warning!"),
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
-
         private void ButtonStopMining_Click(object sender, EventArgs e)
         {
             _isManuallyStarted = false;
-            StopMining();
+            ApplicationStateManager.StopAllDevice();
         }
-
-        private string FormatPayingOutput(double paying)
-        {
-            string ret;
-
-            if (ConfigManager.GeneralConfig.AutoScaleBTCValues && paying < 0.1)
-                ret = (paying * 1000 * _factorTimeUnit).ToString("F5", CultureInfo.InvariantCulture) + " mBTC/" +
-                      International.GetText(ConfigManager.GeneralConfig.TimeUnit.ToString());
-            else
-                ret = (paying * _factorTimeUnit).ToString("F6", CultureInfo.InvariantCulture) + " BTC/" +
-                      International.GetText(ConfigManager.GeneralConfig.TimeUnit.ToString());
-
-            return ret;
-        }
-
 
         private void ButtonLogo_Click(object sender, EventArgs e)
         {
@@ -1009,31 +483,182 @@ namespace NiceHashMiner
             statusStrip1.Cursor = Cursors.Default;
         }
 
-        private void TextBoxCheckBoxMain_Leave(object sender, EventArgs e)
+        ///////////////////////////////////////
+        // Miner control functions
+        private enum StartMiningReturnType
         {
-            if (VerifyMiningAddress(false))
+            StartMining,
+            ShowNoMining,
+            IgnoreMsg
+        }
+
+        // TODO this thing needs to be completely removed
+        // TODO this will be moved outside of GUI code, replace textBoxBTCAddress.Text with ConfigManager.GeneralConfig.BitcoinAddress
+        private StartMiningReturnType StartMining(bool showWarnings)
+        {
+            //if (ConfigManager.GeneralConfig.BitcoinAddress.Equals(""))
+            //{
+            //    if (showWarnings)
+            //    {
+            //        var result = MessageBox.Show(Tr("You have not entered a bitcoin address. NiceHash Miner Legacy will start mining in DEMO mode. In the DEMO mode, you can test run the miner and be able see how much you can earn using your computer. Would you like to continue in DEMO mode?\n\nDISCLAIMER: YOU WILL NOT EARN ANYTHING DURING DEMO MODE!"),
+            //            Tr("Start mining in DEMO mode?"),
+            //            MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+            //        if (result == DialogResult.Yes)
+            //        {
+            //            _demoMode = true;
+            //            //labelDemoMode.Visible = true;
+            //        }
+            //        else
+            //        {
+            //            return StartMiningReturnType.IgnoreMsg;
+            //        }
+            //    }
+            //    else
+            //    {
+            //        return StartMiningReturnType.IgnoreMsg;
+            //    }
+            //}
+            ////else if (!VerifyMiningAddress(true)) return StartMiningReturnType.IgnoreMsg; // TODO this whole shitty thing
+
+            var hasData = NHSmaData.HasData;
+
+            if (!showWarnings)
             {
-                if (ConfigManager.GeneralConfig.BitcoinAddress != textBoxBTCAddress.Text.Trim()
-                    || ConfigManager.GeneralConfig.WorkerName != textBoxWorkerName.Text.Trim())
+                for (var i = 0; i < 10; i++)
                 {
-                    // Reset credentials
-                    NiceHashStats.SetCredentials(textBoxBTCAddress.Text.Trim(), textBoxWorkerName.Text.Trim());
+                    if (hasData) break;
+                    Thread.Sleep(1000);
+                    hasData = NHSmaData.HasData;
+                    Logger.Info("NICEHASH", $"After {i}s has data: {hasData}");
                 }
-                // Commit to config.json
-                ConfigManager.GeneralConfig.BitcoinAddress = textBoxBTCAddress.Text.Trim();
-                ConfigManager.GeneralConfig.WorkerName = textBoxWorkerName.Text.Trim();
-                ConfigManager.GeneralConfig.ServiceLocation = comboBoxLocation.SelectedIndex;
-                ConfigManager.GeneralConfigFileCommit();
             }
+
+            if (!hasData)
+            {
+                Logger.Debug("NICEHASH", "No data received within timeout");
+                if (showWarnings)
+                {
+                    MessageBox.Show(Tr("Unable to get NiceHash profitability data. If you are connected to internet, try again later."),
+                        Tr("Error!"),
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                return StartMiningReturnType.IgnoreMsg;
+            }
+
+            var isMining = true;
+            ApplicationStateManager.StartAllAvailableDevices();
+
+            return isMining ? StartMiningReturnType.StartMining : StartMiningReturnType.ShowNoMining;
+        }
+
+        private void Form_Main_ResizeEnd(object sender, EventArgs e)
+        {
+            ConfigManager.GeneralConfig.MainFormSize.X = Width;
+            ConfigManager.GeneralConfig.MainFormSize.Y = Height;
+        }
+
+        // StateDisplay interfaces
+
+        void IVersionDisplayer.DisplayVersion(object sender, string version)
+        {
+            FormHelpers.SafeInvoke(this, () =>
+            {
+                linkLabelNewVersion.Text = version;
+                errorWarningProvider2.SetError(linkLabelNewVersion, version);
+            });
+        }
+
+        // TODO this might need some formatters?
+        void IBalanceBTCDisplayer.DisplayBTCBalance(object sender, double btcBalance)
+        {
+            FormHelpers.SafeInvoke(this, () =>
+            {
+                if (ConfigManager.GeneralConfig.AutoScaleBTCValues && btcBalance < 0.1)
+                {
+                    toolStripStatusLabelBalanceBTCCode.Text = "mBTC";
+                    toolStripStatusLabelBalanceBTCValue.Text =
+                        (btcBalance * 1000).ToString("F5", CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    toolStripStatusLabelBalanceBTCCode.Text = "BTC";
+                    toolStripStatusLabelBalanceBTCValue.Text = btcBalance.ToString("F6", CultureInfo.InvariantCulture);
+                }
+            });
+        }
+
+        void IBalanceFiatDisplayer.DisplayFiatBalance(object sender, (double fiatBalance, string fiatCurrencySymbol) args)
+        {
+            FormHelpers.SafeInvoke(this, () =>
+            {
+                toolStripStatusLabelBalanceDollarText.Text = args.fiatBalance.ToString("F2", CultureInfo.InvariantCulture);
+                toolStripStatusLabelBalanceDollarValue.Text = $"({args.fiatCurrencySymbol})";
+            });
+        }
+
+        void IGlobalMiningRateDisplayer.DisplayGlobalMiningRate(object sender, double totalMiningRate)
+        {
+            FormHelpers.SafeInvoke(this, () =>
+            {
+                UpdateGlobalRate(totalMiningRate);
+            });
+        }
+
+        //void IStartMiningDisplayer.DisplayMiningStarted(object sender, EventArgs _)
+        //{
+        //    FormHelpers.SafeInvoke(this, () =>
+        //    {
+        //        //// Disable profitable notification on start
+        //        //_isNotProfitable = false;
+        //        HideWarning();
+        //    });
+        //}
+
+        //void IStopMiningDisplayer.DisplayMiningStopped(object sender, EventArgs _)
+        //{
+        //    FormHelpers.SafeInvoke(this, () =>
+        //    {
+        //        //// Disable IFTTT notification before label call
+        //        //_isNotProfitable = false;
+        //        labelDemoMode.Visible = false;
+        //        _demoMode = false; // TODO this is logic
+
+        //        UpdateGlobalRate(0);
+        //    });
+        //}
+
+        private void ButtonPlugins_Click(object sender, EventArgs e)
+        {
+            if (_minerPluginsForm == null) _minerPluginsForm = new Form_MinerPlugins();
+            SetChildFormCenter(_minerPluginsForm);
+            _minerPluginsForm.ShowDialog();
+        }
+
+        private void NotifyIcon1_MouseClick(object sender, MouseEventArgs e)
+        {
+            if (MouseButtons.Right == e.Button)
+            {
+                contextMenuStrip1.Show();
+            } 
+        }
+
+        private void ExitToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            _exitCalled = true;
+            Application.Exit();
+        }
+
+        private void ToolStripMenuItemShow_Click(object sender, EventArgs e)
+        {
+            Show();
+            WindowState = FormWindowState.Normal;
+            notifyIcon1.Visible = false;
         }
 
         // Minimize to system tray if MinimizeToTray is set to true
         private void Form1_Resize(object sender, EventArgs e)
         {
-            notifyIcon1.Icon = Properties.Resources.logo;
-            notifyIcon1.Text = Application.ProductName + " v" + Application.ProductVersion +
-                               "\nDouble-click to restore..";
-
             if (ConfigManager.GeneralConfig.MinimizeToTray && FormWindowState.Minimized == WindowState)
             {
                 notifyIcon1.Visible = true;
@@ -1049,188 +674,69 @@ namespace NiceHashMiner
             notifyIcon1.Visible = false;
         }
 
-        ///////////////////////////////////////
-        // Miner control functions
-        private enum StartMiningReturnType
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
-            StartMining,
-            ShowNoMining,
-            IgnoreMsg
+            if (ConfigManager.GeneralConfig.MinimizeToTray && !_exitCalled)
+            {
+                notifyIcon1.Visible = true;
+                Hide();
+                e.Cancel = true;
+                return;
+            }
+
+            FormHelpers.UnsubscribeAllControls(this);
+            ApplicationStateManager.BeforeExit();
+            MessageBoxManager.Unregister();
         }
 
-        private StartMiningReturnType StartMining(bool showWarnings)
-        {
-            if (textBoxBTCAddress.Text.Equals(""))
-            {
-                if (showWarnings)
-                {
-                    var result = MessageBox.Show(International.GetText("Form_Main_DemoModeMsg"),
-                        International.GetText("Form_Main_DemoModeTitle"),
-                        MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        private bool _isProfitable = true;
+        private bool _noInternet = false;
 
-                    if (result == DialogResult.Yes)
-                    {
-                        _demoMode = true;
-                        labelDemoMode.Visible = true;
-                        labelDemoMode.Text = International.GetText("Form_Main_DemoModeLabel");
-                    }
-                    else
-                    {
-                        return StartMiningReturnType.IgnoreMsg;
-                    }
+        void IMiningProfitabilityDisplayer.DisplayMiningProfitable(object sender, bool isProfitable)
+        {
+            if (ConfigManager.GeneralConfig.UseIFTTT)
+            {
+                if (isProfitable)
+                {
+                    Ifttt.PostToIfttt("nicehash", "Mining is once again profitable and has resumed.");
                 }
                 else
                 {
-                    return StartMiningReturnType.IgnoreMsg;
+                    Ifttt.PostToIfttt("nicehash", "Mining NOT profitable and has stopped.");
                 }
             }
-            else if (!VerifyMiningAddress(true)) return StartMiningReturnType.IgnoreMsg;
+            _isProfitable = isProfitable;
+            ShowOrHideWarningLabel(_isProfitable, _noInternet);
+        }
 
-            var hasData = NHSmaData.HasData;
+        void INoInternetConnectionDisplayer.DisplayNoInternetConnection(object sender, bool noInternet)
+        {
+            _noInternet = noInternet;
+            ShowOrHideWarningLabel(_isProfitable, _noInternet);
+        }
 
-            if (!showWarnings)
-            {
-                for (var i = 0; i < 10; i++)
+        private void ShowOrHideWarningLabel(bool isProfitable, bool noInternet)
+        {
+            FormHelpers.SafeInvoke(this, () => {
+                if (!isProfitable || noInternet)
                 {
-                    if (hasData) break;
-                    Thread.Sleep(1000);
-                    hasData = NHSmaData.HasData;
-                    Helpers.ConsolePrint("NICEHASH", $"After {i}s has data: {hasData}");
-                }
-            }
-
-            if (!hasData)
-            {
-                Helpers.ConsolePrint("NICEHASH", "No data received within timeout");
-                if (showWarnings)
-                {
-                    MessageBox.Show(International.GetText("Form_Main_msgbox_NullNiceHashDataMsg"),
-                        International.GetText("Error_with_Exclamation"),
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-                return StartMiningReturnType.IgnoreMsg;
-            }
-
-
-            // Check if there are unbenchmakred algorithms
-            var isBenchInit = true;
-            foreach (var cdev in ComputeDeviceManager.Available.Devices)
-            {
-                if (cdev.Enabled)
-                {
-                    if (cdev.GetAlgorithmSettings().Where(algo => algo.Enabled).Any(algo => algo.BenchmarkSpeed == 0))
+                    var text = "";
+                    if (!isProfitable)
                     {
-                        isBenchInit = false;
+                        text += Environment.NewLine + Tr("CURRENTLY MINING NOT PROFITABLE.");
                     }
-                }
-            }
-            // Check if the user has run benchmark first
-            if (!isBenchInit)
-            {
-                var result = DialogResult.No;
-                if (showWarnings)
-                {
-                    result = MessageBox.Show(International.GetText("EnabledUnbenchmarkedAlgorithmsWarning"),
-                        International.GetText("Warning_with_Exclamation"),
-                        MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
-                }
-                if (result == DialogResult.Yes)
-                {
-                    _benchmarkForm = new Form_Benchmark(
-                        BenchmarkPerformanceType.Standard,
-                        true);
-                    SetChildFormCenter(_benchmarkForm);
-                    _benchmarkForm.ShowDialog();
-                    _benchmarkForm = null;
-                    InitMainConfigGuiData();
-                }
-                else if (result == DialogResult.No)
-                {
-                    // check devices without benchmarks
-                    foreach (var cdev in ComputeDeviceManager.Available.Devices)
+                    if (noInternet)
                     {
-                        if (cdev.Enabled)
-                        {
-                            var enabled = cdev.GetAlgorithmSettings().Any(algo => algo.BenchmarkSpeed > 0);
-                            cdev.Enabled = enabled;
-                        }
+                        text += Environment.NewLine + Tr("CURRENTLY NOT MINING. NO INTERNET CONNECTION.");
                     }
+                    labelWarningNotProfitableOrNoIntenret.Text = text;
+                    labelWarningNotProfitableOrNoIntenret.Visible = true;
                 }
                 else
                 {
-                    return StartMiningReturnType.IgnoreMsg;
+                    labelWarningNotProfitableOrNoIntenret.Visible = false;
                 }
-            }
-
-            textBoxBTCAddress.Enabled = false;
-            textBoxWorkerName.Enabled = false;
-            comboBoxLocation.Enabled = false;
-            buttonBenchmark.Enabled = false;
-            buttonStartMining.Enabled = false;
-            buttonSettings.Enabled = false;
-            devicesListViewEnableControl1.IsMining = true;
-            buttonStopMining.Enabled = true;
-
-            // Disable profitable notification on start
-            _isNotProfitable = false;
-
-            ConfigManager.GeneralConfig.BitcoinAddress = textBoxBTCAddress.Text.Trim();
-            ConfigManager.GeneralConfig.WorkerName = textBoxWorkerName.Text.Trim();
-            ConfigManager.GeneralConfig.ServiceLocation = comboBoxLocation.SelectedIndex;
-
-            InitFlowPanelStart();
-            ClearRatesAll();
-
-            var btcAdress = _demoMode ? Globals.DemoUser : textBoxBTCAddress.Text.Trim();
-            var isMining = MinersManager.StartInitialize(this, Globals.MiningLocation[comboBoxLocation.SelectedIndex],
-                textBoxWorkerName.Text.Trim(), btcAdress);
-
-            if (!_demoMode) ConfigManager.GeneralConfigFileCommit();
-
-            //_isSmaUpdated = true; // Always check profits on mining start
-            //_smaMinerCheck.Interval = 100;
-            //_smaMinerCheck.Start();
-            _minerStatsCheck.Start();
-
-            if (ConfigManager.GeneralConfig.RunScriptOnCUDA_GPU_Lost)
-            {
-                _computeDevicesCheckTimer = new SystemTimer();
-                _computeDevicesCheckTimer.Elapsed += ComputeDevicesCheckTimer_Tick;
-                _computeDevicesCheckTimer.Interval = 60000;
-
-                _computeDevicesCheckTimer.Start();
-            }
-
-            return isMining ? StartMiningReturnType.StartMining : StartMiningReturnType.ShowNoMining;
-        }
-
-        private void StopMining()
-        {
-            _minerStatsCheck.Stop();
-            //_smaMinerCheck.Stop();
-            _computeDevicesCheckTimer?.Stop();
-
-            // Disable IFTTT notification before label call
-            _isNotProfitable = false;
-
-            MinersManager.StopAllMiners();
-
-            textBoxBTCAddress.Enabled = true;
-            textBoxWorkerName.Enabled = true;
-            comboBoxLocation.Enabled = true;
-            buttonBenchmark.Enabled = true;
-            buttonStartMining.Enabled = true;
-            buttonSettings.Enabled = true;
-            devicesListViewEnableControl1.IsMining = false;
-            buttonStopMining.Enabled = false;
-
-            if (_demoMode)
-            {
-                _demoMode = false;
-                labelDemoMode.Visible = false;
-            }
-
-            UpdateGlobalRate();
+            });
         }
     }
 }

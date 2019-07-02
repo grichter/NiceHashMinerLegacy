@@ -47,6 +47,7 @@
             this.listViewAlgorithms.Dock = System.Windows.Forms.DockStyle.Fill;
             this.listViewAlgorithms.FullRowSelect = true;
             this.listViewAlgorithms.GridLines = true;
+            this.listViewAlgorithms.HideSelection = false;
             this.listViewAlgorithms.Location = new System.Drawing.Point(0, 0);
             this.listViewAlgorithms.MultiSelect = false;
             this.listViewAlgorithms.Name = "listViewAlgorithms";
@@ -68,13 +69,13 @@
             // 
             // columnHeader2
             // 
-            this.columnHeader2.Text = "Speed";
+            this.columnHeader2.Text = "Miner";
             this.columnHeader2.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
             this.columnHeader2.Width = 120;
             // 
             // columnHeader3
             // 
-            this.columnHeader3.Text = "Secondary Speed";
+            this.columnHeader3.Text = "Speeds";
             this.columnHeader3.TextAlign = System.Windows.Forms.HorizontalAlignment.Right;
             // 
             // columnHeader4

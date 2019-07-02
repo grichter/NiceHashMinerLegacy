@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
+using NiceHashMiner.Miners;
 using NiceHashMiner.Switching;
 using NiceHashMinerLegacy.Common.Enums;
 
@@ -9,96 +11,156 @@ namespace NiceHashMiner.Configs.Data
     public class GeneralConfig
     {
         public Version ConfigFileVersion;
-        public LanguageType Language = LanguageType.En;
-        public string DisplayCurrency = "USD";
 
-        public bool DebugConsole = false;
-        public string BitcoinAddress = "";
-        public string WorkerName = "worker1";
-        public TimeUnitType TimeUnit = TimeUnitType.Day;
-        public string IFTTTKey = "";
-        public int ServiceLocation = 0;
-        public bool AutoStartMining = false;
-        public bool HideMiningWindows = false;
-        public bool MinimizeToTray = false;
+        public string Language
+        {
+            get => TranslationsSettings.Instance.Language;
+            set => TranslationsSettings.Instance.Language = value;
+        }
 
-        public bool MinimizeMiningWindows = false;
 
-        //public int LessThreads;
-        public CpuExtensionType ForceCPUExtension = CpuExtensionType.Automatic;
+        public string DisplayCurrency { get; set; } = "USD";
 
-        [Obsolete("Use SwitchSmaTimeChangeSeconds")]
-        public int SwitchMinSecondsFixed = 90;
-        [Obsolete("Use SwitchSmaTimeChangeSeconds")]
-        public int SwitchMinSecondsDynamic = 30;
-        [Obsolete("Use SwitchSmaTimeChangeSeconds")]
-        public int SwitchMinSecondsAMD = 60;
-        public double SwitchProfitabilityThreshold = 0.05; // percent
-        public int MinerAPIQueryInterval = 5;
-        public int MinerRestartDelayMS = 500;
+        public bool DebugConsole { get; set; } = false;
 
-        public BenchmarkTimeLimitsConfig BenchmarkTimeLimits = new BenchmarkTimeLimitsConfig();
 
-        // TODO deprecate this
-        public DeviceDetectionConfig DeviceDetection = new DeviceDetectionConfig();
+        public string BitcoinAddress
+        {
+            get => CredentialsSettings.Instance.BitcoinAddress;
+            set => CredentialsSettings.Instance.BitcoinAddress = value;
+        }
 
-        public bool DisableAMDTempControl = true;
-        public bool DisableDefaultOptimizations = false;
+        public string WorkerName
+        {
+            get => CredentialsSettings.Instance.WorkerName;
+            set => CredentialsSettings.Instance.WorkerName = value;
+        }
 
-        public bool AutoScaleBTCValues = true;
-        public bool StartMiningWhenIdle = false;
 
-        public int MinIdleSeconds = 60;
-        public bool LogToFile = true;
+
+        public TimeUnitType TimeUnit { get; set; } = TimeUnitType.Day;
+
+        public int ServiceLocation
+        {
+            get => StratumService.ServiceLocation;
+            set => StratumService.ServiceLocation = value;
+        }
+
+        public bool AutoStartMining { get; set; } = false;
+
+
+        private bool _hideMiningWindows = false;
+        public bool HideMiningWindows
+        {
+            get => _hideMiningWindows;
+            set
+            {
+                _hideMiningWindows = value;
+                MinerPluginToolkitV1.MinerToolkit.HideMiningWindows = value;
+            }
+        }
+
+        private bool _minimizeMiningWindows = false;
+        public bool MinimizeMiningWindows
+        {
+            get => _minimizeMiningWindows;
+            set
+            {
+                _minimizeMiningWindows = value;
+                MinerPluginToolkitV1.MinerToolkit.MinimizeMiningWindows = value;
+            }
+        }
+
+        public bool MinimizeToTray { get; set; } = false;
+
+        public double SwitchProfitabilityThreshold { get; set; } = 0.05; // percent
+        public int MinerAPIQueryInterval { get; set; } = 5;
+
+
+        private int _minerRestartDelayMS = 500;
+        public int MinerRestartDelayMS
+        {
+            get => _minerRestartDelayMS;
+            set
+            {
+                _minerRestartDelayMS = value;
+                MinerPluginToolkitV1.MinerToolkit.MinerRestartDelayMS = value;
+            }
+        }
+
+        private bool _autoScaleBTCValues = true;
+        public bool AutoScaleBTCValues
+        {
+            get => _autoScaleBTCValues;
+            set
+            {
+                _autoScaleBTCValues = value;
+                ApplicationStateManager.OnAutoScaleBTCValuesChange();
+            }
+        }
+
+
+        public bool StartMiningWhenIdle
+        {
+            get => IdleMiningSettings.Instance.StartMiningWhenIdle;
+            set => IdleMiningSettings.Instance.StartMiningWhenIdle = value;
+        }
+        public IdleCheckType IdleCheckType
+        {
+            get => IdleMiningSettings.Instance.IdleCheckType;
+            set => IdleMiningSettings.Instance.IdleCheckType = value;
+        }
+
+        public int MinIdleSeconds { get; set; } = 60;
+
+        public bool LogToFile { get; set; } = true;
 
         // in bytes
-        public long LogMaxFileSize = 1048576;
+        public long LogMaxFileSize { get; set; } = 1048576;
 
-        public bool ShowDriverVersionWarning = true;
-        public bool DisableWindowsErrorReporting = true;
-        public bool ShowInternetConnectionWarning = true;
-        public bool NVIDIAP0State = false;
+        public bool ShowDriverVersionWarning { get; set; } = true;
+        public bool DisableWindowsErrorReporting { get; set; } = true;
+        public bool ShowInternetConnectionWarning { get; set; } = true;
+        public bool NVIDIAP0State { get; set; } = false;
 
-        public int ethminerDefaultBlockHeight = 2000000;
-        public DagGenerationType EthminerDagGenerationType = DagGenerationType.SingleKeep;
-        public int ApiBindPortPoolStart = 5100;
-        public double MinimumProfit = 0;
-        public bool IdleWhenNoInternetAccess = true;
-        public bool UseIFTTT = false;
-        public bool DownloadInit = false;
+        private int _apiBindPortPoolStart { get; set; } = 4000;
+        public int ApiBindPortPoolStart
+        {
+            get => _apiBindPortPoolStart;
+            set
+            {
+                _apiBindPortPoolStart = value;
+                MinerPluginToolkitV1.FreePortsCheckerManager.ApiBindPortPoolStart = value;
+            }
+        }
+        public double MinimumProfit { get; set; } = 0;
 
-        public bool RunScriptOnCUDA_GPU_Lost = false;
+        public bool IdleWhenNoInternetAccess { get; set; } = true;
+        public bool RunScriptOnCUDA_GPU_Lost { get; set; } = false;
+        public bool AllowMultipleInstances { get; set; } = true;
+
+        // IFTTT
+        public bool UseIFTTT { get; set; } = false;
+        public string IFTTTKey { get; set; } = "";
 
         // 3rd party miners
-        public Use3rdPartyMiners Use3rdPartyMiners = Use3rdPartyMiners.NOT_SET;
-
-        public bool DownloadInit3rdParty = false;
-
-        public bool AllowMultipleInstances = true;
-
-        // device enabled disabled stuff
-        public List<ComputeDeviceConfig> LastDevicesSettup = new List<ComputeDeviceConfig>();
+        public Use3rdPartyMiners Use3rdPartyMiners
+        {
+            get => NiceHashMiner.Configs.ThirdPartyMinerSettings.Instance.Use3rdPartyMiners;
+            set => NiceHashMiner.Configs.ThirdPartyMinerSettings.Instance.Use3rdPartyMiners = value;
+        }
 
         // 
         public string hwid = "";
 
         public int agreedWithTOS = 0;
 
-        // normalization stuff
-        [Obsolete]
-        public double IQROverFactor = 3.0;
-        [Obsolete]
-        public int NormalizedProfitHistory = 15;
-        [Obsolete]
-        public double IQRNormalizeFactor = 0.0;
 
-        public bool CoolDownCheckEnabled = true;
-
-        // Set to skip driver checks to enable Neoscrypt/Lyra2RE on AMD
-        public bool ForceSkipAMDNeoscryptLyraCheck = false;
-
-        // Overriding AMDOpenCLDeviceDetection returned Bus IDs (in case of driver error, e.g. 17.12.1)
-        public string OverrideAMDBusIds = "";
+        public bool CoolDownCheckEnabled
+        {
+            get => MinerApiWatchdog.Enabled;
+            set => MinerApiWatchdog.Enabled = value;
+        }
 
         public Interval SwitchSmaTimeChangeSeconds = new Interval(34, 55);
         public Interval SwitchSmaTicksStable = new Interval(2, 3);
@@ -107,21 +169,37 @@ namespace NiceHashMiner.Configs.Data
         /// <summary>
         /// Cost of electricity in kW-h
         /// </summary>
-        public double KwhPrice = 0;
+        public double KwhPrice { get; set; } = 0;
 
         /// <summary>
         /// True if NHML should try to cache SMA values for next launch
         /// </summary>
-        public bool UseSmaCache = true;
+        public bool UseSmaCache { get; set; } = true;
 
-        public bool UseEthlargement = false;
+        public bool ShowPowerColumns { get; set; } = false;
+        public bool ShowDiagColumns { get; set; } = true;
+
+        public Point MainFormSize = new Point(1000, 400);
+
+        public bool UseEthlargement
+        {
+            get => NiceHashMiner.Configs.ThirdPartyMinerSettings.Instance.UseEthlargement;
+            set => NiceHashMiner.Configs.ThirdPartyMinerSettings.Instance.UseEthlargement = value;
+        }
+
+        public string RigGroup { get; set; } = "";
+
+        public bool RunAtStartup
+        {
+            get => NiceHashMiner.Configs.RunAtStartup.Instance.Enabled;
+            set => NiceHashMiner.Configs.RunAtStartup.Instance.Enabled = value;
+        }
 
         // methods
         public void SetDefaults()
         {
             ConfigFileVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            Language = LanguageType.En;
-            ForceCPUExtension = CpuExtensionType.Automatic;
+            Language = "";
             BitcoinAddress = "";
             WorkerName = "worker1";
             TimeUnit = TimeUnitType.Day;
@@ -131,10 +209,6 @@ namespace NiceHashMiner.Configs.Data
             DebugConsole = false;
             HideMiningWindows = false;
             MinimizeToTray = false;
-            BenchmarkTimeLimits = new BenchmarkTimeLimitsConfig();
-            DeviceDetection = new DeviceDetectionConfig();
-            DisableAMDTempControl = true;
-            DisableDefaultOptimizations = false;
             AutoScaleBTCValues = true;
             StartMiningWhenIdle = false;
             LogToFile = true;
@@ -144,35 +218,27 @@ namespace NiceHashMiner.Configs.Data
             ShowInternetConnectionWarning = true;
             NVIDIAP0State = false;
             MinerRestartDelayMS = 500;
-            ethminerDefaultBlockHeight = 2000000;
-            SwitchMinSecondsFixed = 90;
-            SwitchMinSecondsDynamic = 30;
-            SwitchMinSecondsAMD = 90;
             SwitchProfitabilityThreshold = 0.05; // percent
             MinIdleSeconds = 60;
             DisplayCurrency = "USD";
             ApiBindPortPoolStart = 4000;
             MinimumProfit = 0;
-            EthminerDagGenerationType = DagGenerationType.SingleKeep;
-            DownloadInit = false;
-            //ContinueMiningIfNoInternetAccess = false;
             IdleWhenNoInternetAccess = true;
+            IdleCheckType = IdleCheckType.SessionLock;
             Use3rdPartyMiners = Use3rdPartyMiners.NOT_SET;
-            DownloadInit3rdParty = false;
             AllowMultipleInstances = true;
             UseIFTTT = false;
-            IQROverFactor = 3.0;
-            NormalizedProfitHistory = 15;
-            IQRNormalizeFactor = 0.0;
             CoolDownCheckEnabled = true;
             RunScriptOnCUDA_GPU_Lost = false;
-            ForceSkipAMDNeoscryptLyraCheck = false;
-            OverrideAMDBusIds = "";
             SwitchSmaTimeChangeSeconds = new Interval(34, 55);
             SwitchSmaTicksStable = new Interval(2, 3);
             SwitchSmaTicksUnstable = new Interval(5, 13);
             UseSmaCache = true;
+            ShowPowerColumns = false;
+            ShowDiagColumns = true;
             UseEthlargement = false;
+            RigGroup = "";
+            RunAtStartup = false;
         }
 
         public void FixSettingBounds()
@@ -183,17 +249,13 @@ namespace NiceHashMiner.Configs.Data
             {
                 DisplayCurrency = "USD";
             }
-            if (SwitchMinSecondsFixed <= 0)
+            if (CredentialValidators.ValidateBitcoinAddress(BitcoinAddress) == false)
             {
-                SwitchMinSecondsFixed = 90;
+                BitcoinAddress = "";
             }
-            if (SwitchMinSecondsDynamic <= 0)
+            if (CredentialValidators.ValidateWorkerName(WorkerName) == false)
             {
-                SwitchMinSecondsDynamic = 30;
-            }
-            if (SwitchMinSecondsAMD <= 0)
-            {
-                SwitchMinSecondsAMD = 60;
+                WorkerName = "worker1";
             }
             if (MinerAPIQueryInterval <= 0)
             {
@@ -216,38 +278,47 @@ namespace NiceHashMiner.Configs.Data
             {
                 ApiBindPortPoolStart = 5100;
             }
-            if (BenchmarkTimeLimits == null)
-            {
-                BenchmarkTimeLimits = new BenchmarkTimeLimitsConfig();
-            }
-            if (DeviceDetection == null)
-            {
-                DeviceDetection = new DeviceDetectionConfig();
-            }
-            if (LastDevicesSettup == null)
-            {
-                LastDevicesSettup = new List<ComputeDeviceConfig>();
-            }
-            if (IQROverFactor < 0)
-            {
-                IQROverFactor = 3.0;
-            }
-            if (NormalizedProfitHistory < 0)
-            {
-                NormalizedProfitHistory = 15;
-            }
-            if (IQRNormalizeFactor < 0)
-            {
-                IQRNormalizeFactor = 0.0;
-            }
+
             if (KwhPrice < 0)
             {
                 KwhPrice = 0;
+            }
+            // for backward compatibility fix the new setting to language codes
+            var langCodes = new Dictionary<string, string> {
+                { "0", "en" },
+                { "1", "ru" },
+                { "2", "es" },
+                { "3", "pt" },
+                { "4", "bg" },
+                { "5", "it" },
+                { "6", "pl" },
+                { "7", "zh_cn" },
+                { "8", "ro" },
+            };
+            if (Language == null)
+            {
+                Language = "en";
+            }
+            else if (langCodes.ContainsKey(Language))
+            {
+                Language = langCodes[Language];
             }
 
             SwitchSmaTimeChangeSeconds.FixRange();
             SwitchSmaTicksStable.FixRange();
             SwitchSmaTicksUnstable.FixRange();
+        }
+
+        public bool HasValidUserWorker()
+        {
+            return CredentialValidators.ValidateBitcoinAddress(BitcoinAddress) &&
+                   CredentialValidators.ValidateWorkerName(WorkerName);
+        }
+
+        //C#7
+        public (string btc, string worker, string group) GetCredentials()
+        {
+            return (BitcoinAddress.Trim(), WorkerName.Trim(), RigGroup.Trim());
         }
     }
 }

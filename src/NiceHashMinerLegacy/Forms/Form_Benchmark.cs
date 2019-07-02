@@ -15,37 +15,23 @@ using NiceHashMiner.Properties;
 using NiceHashMinerLegacy.Common.Enums;
 using Timer = System.Windows.Forms.Timer;
 
+using BenchmarkSelection = NiceHashMinerLegacy.Common.Enums.AlgorithmBenchmarkSettingsType;
+using NiceHashMinerLegacy.Common;
+
 namespace NiceHashMiner.Forms
 {
-    public partial class Form_Benchmark : Form, IListItemCheckColorSetter, IBenchmarkForm, IBenchmarkCalculation
+    public partial class Form_Benchmark : Form, FormHelpers.ICustomTranslate, IListItemCheckColorSetter, IBenchmarkForm, IBenchmarkCalculation
     {
         private static readonly Color DisabledColor = Color.DarkGray;
         private static readonly Color BenchmarkedColor = Color.LightGreen;
         private static readonly Color UnbenchmarkedColor = Color.LightBlue;
 
-        private AlgorithmBenchmarkSettingsType _algorithmOption =
-            AlgorithmBenchmarkSettingsType.SelectedUnbenchmarkedAlgorithms;
-
-        private int _bechmarkCurrentIndex;
-        private int _benchmarkAlgorithmsCount;
-
-        private List<Tuple<ComputeDevice, Queue<Algorithm>>> _benchmarkDevicesAlgorithmQueue;
-
-        private Dictionary<string, BenchmarkSettingsStatus> _benchmarkDevicesAlgorithmStatus;
-        //private AlgorithmType _singleBenchmarkType = AlgorithmType.NONE;
-
         private readonly Timer _benchmarkingTimer;
         private int _dotCount;
 
-        private bool _hasFailedAlgorithms;
-        private List<BenchmarkHandler> _runningBenchmarkThreads = new List<BenchmarkHandler>();
-        private Dictionary<ComputeDevice, Algorithm> _statusCheckAlgos;
+        private readonly bool _exitWhenFinished;
 
-        private readonly bool ExitWhenFinished;
-
-        public bool StartMining { get; private set; }
-
-        public bool InBenchmark { get; private set; }
+        public bool StartMiningOnFinish { get; private set; } = false;
 
         public Form_Benchmark(BenchmarkPerformanceType benchmarkPerformanceType = BenchmarkPerformanceType.Standard,
             bool autostart = false)
@@ -53,46 +39,29 @@ namespace NiceHashMiner.Forms
             InitializeComponent();
             Icon = Resources.logo;
 
-            StartMining = false;
-
             // clear prev pending statuses
-            foreach (var dev in ComputeDeviceManager.Available.Devices)
-            foreach (var algo in dev.GetAlgorithmSettings())
+            foreach (var dev in AvailableDevices.Devices)
+            foreach (var algo in dev.AlgorithmSettings)
                 algo.ClearBenchmarkPendingFirst();
 
             benchmarkOptions1.SetPerformanceType(benchmarkPerformanceType);
 
             // benchmark only unique devices
             devicesListViewEnableControl1.SetIListItemCheckColorSetter(this);
-            devicesListViewEnableControl1.SetComputeDevices(ComputeDeviceManager.Available.Devices);
-
-            InitLocale();
+            devicesListViewEnableControl1.SetComputeDevices(AvailableDevices.Devices.ToList());
 
             _benchmarkingTimer = new Timer();
             _benchmarkingTimer.Tick += BenchmarkingTimer_Tick;
             _benchmarkingTimer.Interval = 1000; // 1s
 
-            //// name, UUID
-            //Dictionary<string, string> benchNamesUUIDs = new Dictionary<string, string>();
-            //// initialize benchmark settings for same cards to only copy settings
-            //foreach (var cDev in ComputeDeviceManager.Available.Devices) {
-            //    var plainDevName = cDev.Name;
-            //    if (benchNamesUUIDs.ContainsKey(plainDevName)) {
-            //        cDev.Enabled = false;
-            //        cDev.BenchmarkCopyUUID = benchNamesUUIDs[plainDevName];
-            //    } else if (cDev.Enabled == true) {
-            //        benchNamesUUIDs.Add(plainDevName, cDev.UUID);
-            //        //cDev.Enabled = true; // enable benchmark
-            //        cDev.BenchmarkCopyUUID = null;
-            //    }
-            //}
+            BenchmarkManager.OnAlgoStatusUpdate += SetCurrentStatus;
+            BenchmarkManager.OnStepUp += StepUpBenchmarkStepProgress;
+            BenchmarkManager.OnBenchmarkEnd += EndBenchmark;
 
-            //groupBoxAlgorithmBenchmarkSettings.Enabled = _singleBenchmarkType == AlgorithmType.NONE;
             devicesListViewEnableControl1.Enabled = true;
             devicesListViewEnableControl1.SetDeviceSelectionChangedCallback(DevicesListView1_ItemSelectionChanged);
 
             devicesListViewEnableControl1.SetAlgorithmsListView(algorithmsListView1);
-            devicesListViewEnableControl1.IsBenchmarkForm = true;
             devicesListViewEnableControl1.IsSettingsCopyEnabled = true;
 
             ResetBenchmarkProgressStatus();
@@ -104,165 +73,81 @@ namespace NiceHashMiner.Forms
             algorithmsListView1.BenchmarkCalculation = this;
 
             // set first device selected {
-            if (ComputeDeviceManager.Available.Devices.Count > 0)
+            if (AvailableDevices.Devices.Count > 0)
             {
-                var firstComputedevice = ComputeDeviceManager.Available.Devices[0];
+                var firstComputedevice = AvailableDevices.Devices[0];
                 algorithmsListView1.SetAlgorithms(firstComputedevice, firstComputedevice.Enabled);
             }
 
             if (autostart)
             {
-                ExitWhenFinished = true;
+                _exitWhenFinished = true;
                 StartStopBtn_Click(null, null);
             }
+
+            FormHelpers.TranslateFormControls(this);
         }
 
         #region IBenchmarkCalculation methods
 
         public void CalcBenchmarkDevicesAlgorithmQueue()
         {
-            _benchmarkAlgorithmsCount = 0;
-            _benchmarkDevicesAlgorithmStatus = new Dictionary<string, BenchmarkSettingsStatus>();
-            _benchmarkDevicesAlgorithmQueue = new List<Tuple<ComputeDevice, Queue<Algorithm>>>();
-            foreach (var cDev in ComputeDeviceManager.Available.Devices)
-            {
-                var algorithmQueue = new Queue<Algorithm>();
-                foreach (var algo in cDev.GetAlgorithmSettings())
-                    if (ShoulBenchmark(algo))
-                    {
-                        algorithmQueue.Enqueue(algo);
-                        algo.SetBenchmarkPendingNoMsg();
-                    }
-                    else
-                    {
-                        algo.ClearBenchmarkPending();
-                    }
-
-
-                BenchmarkSettingsStatus status;
-                if (cDev.Enabled)
-                {
-                    _benchmarkAlgorithmsCount += algorithmQueue.Count;
-                    status = algorithmQueue.Count == 0 ? BenchmarkSettingsStatus.NONE : BenchmarkSettingsStatus.TODO;
-                    _benchmarkDevicesAlgorithmQueue.Add(
-                        new Tuple<ComputeDevice, Queue<Algorithm>>(cDev, algorithmQueue)
-                    );
-                }
-                else
-                {
-                    status = algorithmQueue.Count == 0
-                        ? BenchmarkSettingsStatus.DISABLED_NONE
-                        : BenchmarkSettingsStatus.DISABLED_TODO;
-                }
-
-                _benchmarkDevicesAlgorithmStatus[cDev.Uuid] = status;
-            }
+            var count = BenchmarkManager.CalcBenchDevAlgoQueue();
 
             // GUI stuff
-            progressBarBenchmarkSteps.Maximum = _benchmarkAlgorithmsCount;
+            progressBarBenchmarkSteps.Maximum = count;
             progressBarBenchmarkSteps.Value = 0;
-            SetLabelBenchmarkSteps(0, _benchmarkAlgorithmsCount);
-            _bechmarkCurrentIndex = 0;
+            SetLabelBenchmarkSteps(0, count);
         }
 
-        #endregion
+#endregion
 
-        #region IBenchmarkForm methods
-
-        public void AddToStatusCheck(ComputeDevice device, Algorithm algorithm)
+        private void SetCurrentStatus(object sender, AlgoStatusEventArgs e)
         {
-            Invoke((MethodInvoker) delegate
+            FormHelpers.SafeInvoke(this, () =>
             {
-                _statusCheckAlgos[device] = algorithm;
+                algorithmsListView1.SetSpeedStatus(e.Device, e.Algorithm, e.Status);
             });
         }
 
-        public void RemoveFromStatusCheck(ComputeDevice device, Algorithm algorithm)
+        private void StepUpBenchmarkStepProgress(object sender, StepUpEventArgs e)
         {
-            Invoke((MethodInvoker) delegate
+            FormHelpers.SafeInvoke(this, () =>
             {
-                _statusCheckAlgos.Remove(device);
+                SetLabelBenchmarkSteps(e.CurrentIndex, e.AlgorithmCount);
+                if (e.CurrentIndex <= progressBarBenchmarkSteps.Maximum)
+                    progressBarBenchmarkSteps.Value = e.CurrentIndex;
             });
         }
 
-        public void EndBenchmarkForDevice(ComputeDevice device, bool failedAlgos)
-        {
-            _hasFailedAlgorithms = failedAlgos || _hasFailedAlgorithms;
-            lock (_runningBenchmarkThreads)
-            {
-                _runningBenchmarkThreads.RemoveAll(x => x.Device == device);
-
-                if (_runningBenchmarkThreads.Count <= 0) 
-                    EndBenchmark();
-            }
-        }
-
-
-        public void SetCurrentStatus(ComputeDevice device, Algorithm algorithm, string status)
-        {
-            Invoke((MethodInvoker) delegate
-            {
-                algorithmsListView1.SetSpeedStatus(device, algorithm, status);
-            });
-        }
-
-        public void StepUpBenchmarkStepProgress()
-        {
-            if (InvokeRequired) Invoke((MethodInvoker) StepUpBenchmarkStepProgress);
-            else 
-            {
-                _bechmarkCurrentIndex++;
-                SetLabelBenchmarkSteps(_bechmarkCurrentIndex, _benchmarkAlgorithmsCount);
-                if (_bechmarkCurrentIndex <= progressBarBenchmarkSteps.Maximum)
-                    progressBarBenchmarkSteps.Value = _bechmarkCurrentIndex;
-            }
-        }
-
-        #endregion
-
-        #region IListItemCheckColorSetter methods
+#region IListItemCheckColorSetter methods
 
         public void LviSetColor(ListViewItem lvi)
         {
-            if (lvi.Tag is ComputeDevice cDevice && _benchmarkDevicesAlgorithmStatus != null)
+            if (!(lvi.Tag is ComputeDevice cDevice)) return;
+
+            var uuid = cDevice.Uuid;
+            if (!cDevice.Enabled)
+                lvi.BackColor = DisabledColor;
+            else
             {
-                var uuid = cDevice.Uuid;
-                if (!cDevice.Enabled)
-                    lvi.BackColor = DisabledColor;
-                else
-                    switch (_benchmarkDevicesAlgorithmStatus[uuid])
-                    {
-                        case BenchmarkSettingsStatus.TODO:
-                        case BenchmarkSettingsStatus.DISABLED_TODO:
-                            lvi.BackColor = UnbenchmarkedColor;
-                            break;
-                        case BenchmarkSettingsStatus.NONE:
-                        case BenchmarkSettingsStatus.DISABLED_NONE:
-                            lvi.BackColor = BenchmarkedColor;
-                            break;
-                    }
-                //// enable disable status, NOT needed
-                //if (cdvo.IsEnabled && _benchmarkDevicesAlgorithmStatus[uuid] >= BenchmarkSettingsStatus.DISABLED_NONE) {
-                //    _benchmarkDevicesAlgorithmStatus[uuid] -= 2;
-                //} else if (!cdvo.IsEnabled && _benchmarkDevicesAlgorithmStatus[uuid] <= BenchmarkSettingsStatus.TODO) {
-                //    _benchmarkDevicesAlgorithmStatus[uuid] += 2;
-                //}
+                lvi.BackColor = BenchmarkManager.IsDevBenchmarked(uuid) ? BenchmarkedColor : UnbenchmarkedColor;
             }
         }
 
-        #endregion
+#endregion
 
         private void CopyBenchmarks()
         {
-            Helpers.ConsolePrint("CopyBenchmarks", "Checking for benchmarks to copy");
-            foreach (var cDev in ComputeDeviceManager.Available.Devices)
+            Logger.Debug("CopyBenchmarks", "Checking for benchmarks to copy");
+            foreach (var cDev in AvailableDevices.Devices)
                 // check if copy
                 if (!cDev.Enabled && cDev.BenchmarkCopyUuid != null)
                 {
-                    var copyCdevSettings = ComputeDeviceManager.Available.GetDeviceWithUuid(cDev.BenchmarkCopyUuid);
+                    var copyCdevSettings = AvailableDevices.GetDeviceWithUuid(cDev.BenchmarkCopyUuid);
                     if (copyCdevSettings != null)
                     {
-                        Helpers.ConsolePrint("CopyBenchmarks", $"Copy from {cDev.Uuid} to {cDev.BenchmarkCopyUuid}");
+                        Logger.Info("CopyBenchmarks", $"Copy from {cDev.Uuid} to {cDev.BenchmarkCopyUuid}");
                         cDev.CopyBenchmarkSettingsFrom(copyCdevSettings);
                     }
                 }
@@ -270,9 +155,10 @@ namespace NiceHashMiner.Forms
 
         private void BenchmarkingTimer_Tick(object sender, EventArgs e)
         {
-            if (InBenchmark)
-                foreach (var key in _statusCheckAlgos.Keys)
-                    algorithmsListView1.SetSpeedStatus(key, _statusCheckAlgos[key], GetDotsWaitString());
+            foreach (var check in BenchmarkManager.GetStatusCheckAlgos())
+            {
+                algorithmsListView1.SetSpeedStatus(check.Item1, check.Item2, GetDotsWaitString());
+            }
         }
 
         private string GetDotsWaitString()
@@ -281,45 +167,32 @@ namespace NiceHashMiner.Forms
             if (_dotCount > 3) _dotCount = 1;
             return new string('.', _dotCount);
         }
-
-        private void InitLocale()
+        void FormHelpers.ICustomTranslate.CustomTranslate()
         {
-            Text = International.GetText("Form_Benchmark_title"); //International.GetText("SubmitResultDialog_title");
-            //labelInstruction.Text = International.GetText("SubmitResultDialog_labelInstruction");
-            StartStopBtn.Text = International.GetText("SubmitResultDialog_StartBtn");
-            CloseBtn.Text = International.GetText("SubmitResultDialog_CloseBtn");
-
             // TODO fix locale for benchmark enabled label
             devicesListViewEnableControl1.InitLocale();
-            benchmarkOptions1.InitLocale();
-            algorithmsListView1.InitLocale();
-            groupBoxBenchmarkProgress.Text = International.GetText("FormBenchmark_Benchmark_GroupBoxStatus");
-            radioButton_SelectedUnbenchmarked.Text =
-                International.GetText("FormBenchmark_Benchmark_All_Selected_Unbenchmarked");
-            radioButton_RE_SelectedUnbenchmarked.Text =
-                International.GetText("FormBenchmark_Benchmark_All_Selected_ReUnbenchmarked");
-            checkBox_StartMiningAfterBenchmark.Text =
-                International.GetText("Form_Benchmark_checkbox_StartMiningAfterBenchmark");
+            //benchmarkOptions1.InitLocale();
+            //algorithmsListView1.InitLocale();
         }
 
-        #region Start/Stop methods
+#region Start/Stop methods
 
         private void StartStopBtn_Click(object sender, EventArgs e)
         {
-            if (InBenchmark)
+            if (BenchmarkManager.InBenchmark)
             {
                 StopButonClick();
                 BenchmarkStoppedGuiSettings();
             }
             else if (StartButonClick())
             {
-                StartStopBtn.Text = International.GetText("Form_Benchmark_buttonStopBenchmark");
+                StartStopBtn.Text = Translations.Tr("St&op benchmark");
             }
         }
 
         public void StopBenchmark()
         {
-            if (InBenchmark)
+            if (BenchmarkManager.InBenchmark)
             {
                 StopButonClick();
                 BenchmarkStoppedGuiSettings();
@@ -328,8 +201,8 @@ namespace NiceHashMiner.Forms
 
         private void BenchmarkStoppedGuiSettings()
         {
-            StartStopBtn.Text = International.GetText("Form_Benchmark_buttonStartBenchmark");
-            foreach (var deviceAlgosTuple in _benchmarkDevicesAlgorithmQueue)
+            StartStopBtn.Text = Translations.Tr("Start &benchmark");
+            foreach (var deviceAlgosTuple in BenchmarkManager.BenchDevAlgoQueue)
             {
                 foreach (var algo in deviceAlgosTuple.Item2) algo.ClearBenchmarkPending();
                 algorithmsListView1.RepaintStatus(deviceAlgosTuple.Item1.Enabled, deviceAlgosTuple.Item1.Uuid);
@@ -349,16 +222,13 @@ namespace NiceHashMiner.Forms
         private void StopButonClick()
         {
             _benchmarkingTimer.Stop();
-            InBenchmark = false;
-            Helpers.ConsolePrint("FormBenchmark", "StopButonClick() benchmark routine stopped");
+            Logger.Debug("FormBenchmark", "StopButonClick() benchmark routine stopped");
             //// copy benchmarked
             //CopyBenchmarks();
-            lock (_runningBenchmarkThreads)
-            {
-                foreach (var handler in _runningBenchmarkThreads) handler.InvokeQuit();
-            }
 
-            if (ExitWhenFinished) Close();
+            BenchmarkManager.Stop();
+
+            if (_exitWhenFinished) Close();
         }
 
         private bool StartButonClick()
@@ -366,33 +236,24 @@ namespace NiceHashMiner.Forms
             CalcBenchmarkDevicesAlgorithmQueue();
             // device selection check scope
             {
-                var noneSelected = ComputeDeviceManager.Available.Devices.All(cDev => !cDev.Enabled);
+                var noneSelected = AvailableDevices.Devices.All(cDev => !cDev.Enabled);
                 if (noneSelected)
                 {
-                    MessageBox.Show(International.GetText("FormBenchmark_No_Devices_Selected_Msg"),
-                        International.GetText("FormBenchmark_No_Devices_Selected_Title"),
+                    MessageBox.Show(Translations.Tr("No device has been selected there is nothing to benchmark"),
+                        Translations.Tr("No device selected"),
                         MessageBoxButtons.OK);
                     return false;
                 }
             }
             // device todo benchmark check scope
             {
-                var nothingToBench =
-                    _benchmarkDevicesAlgorithmStatus.All(statusKpv => statusKpv.Value != BenchmarkSettingsStatus.TODO);
-                if (nothingToBench)
+                if (!BenchmarkManager.HasWork)
                 {
-                    MessageBox.Show(International.GetText("FormBenchmark_Nothing_to_Benchmark_Msg"),
-                        International.GetText("FormBenchmark_Nothing_to_Benchmark_Title"),
+                    MessageBox.Show(Translations.Tr("Current benchmark settings are already executed. There is nothing to do."),
+                        Translations.Tr("Nothing to benchmark"),
                         MessageBoxButtons.OK);
                     return false;
                 }
-            }
-
-            _hasFailedAlgorithms = false;
-            _statusCheckAlgos = new Dictionary<ComputeDevice, Algorithm>();
-            lock (_runningBenchmarkThreads)
-            {
-                _runningBenchmarkThreads = new List<BenchmarkHandler>();
             }
 
             // disable gui controls
@@ -401,102 +262,62 @@ namespace NiceHashMiner.Forms
             algorithmsListView1.IsInBenchmark = true;
             devicesListViewEnableControl1.IsInBenchmark = true;
             // set benchmark pending status
-            foreach (var deviceAlgosTuple in _benchmarkDevicesAlgorithmQueue)
+            foreach (var deviceAlgosTuple in BenchmarkManager.BenchDevAlgoQueue)
             {
                 foreach (var algo in deviceAlgosTuple.Item2) algo.SetBenchmarkPending();
                 if (deviceAlgosTuple.Item1 != null)
                     algorithmsListView1.RepaintStatus(deviceAlgosTuple.Item1.Enabled, deviceAlgosTuple.Item1.Uuid);
             }
-
-            StartBenchmark();
+            
+            BenchmarkManager.Start(benchmarkOptions1.PerformanceType, this);
+            _benchmarkingTimer.Start();
 
             return true;
         }
 
-        private bool ShoulBenchmark(Algorithm algorithm)
+        public void EndBenchmark(object sender, bool hasFailedAlgos)
         {
-            var isBenchmarked = !algorithm.BenchmarkNeeded;
-            switch (_algorithmOption)
-            {
-                case AlgorithmBenchmarkSettingsType.SelectedUnbenchmarkedAlgorithms when !isBenchmarked &&
-                                                                                         algorithm.Enabled:
-                    return true;
-                case AlgorithmBenchmarkSettingsType.UnbenchmarkedAlgorithms when !isBenchmarked:
-                    return true;
-                case AlgorithmBenchmarkSettingsType.ReBecnhSelectedAlgorithms when algorithm.Enabled:
-                    return true;
-                case AlgorithmBenchmarkSettingsType.AllAlgorithms:
-                    return true;
+            if (ApplicationStateManager.BurnCalled) {
+                return;
             }
-
-            return false;
-        }
-
-        private void StartBenchmark()
-        {
-            InBenchmark = true;
-            lock (_runningBenchmarkThreads)
-            {
-                foreach (var pair in _benchmarkDevicesAlgorithmQueue)
-                {
-                    var handler = new BenchmarkHandler(pair.Item1, pair.Item2, this, benchmarkOptions1.PerformanceType);
-                    _runningBenchmarkThreads.Add(handler);
-                }
-                // Don't start until list is populated
-                foreach (var thread in _runningBenchmarkThreads)
-                {
-                    thread.Start();
-                }
-            }
-
-            _benchmarkingTimer.Start();
-        }
-
-        private void EndBenchmark()
-        {
-            Invoke((MethodInvoker) delegate
-            {
+            FormHelpers.SafeInvoke(this, () => {
                 _benchmarkingTimer.Stop();
-                InBenchmark = false;
-                Ethlargement.Stop();
-                Helpers.ConsolePrint("FormBenchmark", "EndBenchmark() benchmark routine finished");
+                Logger.Debug("FormBenchmark", "EndBenchmark() benchmark routine finished");
 
                 //CopyBenchmarks();
 
                 BenchmarkStoppedGuiSettings();
                 // check if all ok
-                if (!_hasFailedAlgorithms && StartMining == false)
+                if (!hasFailedAlgos && StartMiningOnFinish == false)
                 {
                     MessageBox.Show(
-                        International.GetText("FormBenchmark_Benchmark_Finish_Succes_MsgBox_Msg"),
-                        International.GetText("FormBenchmark_Benchmark_Finish_MsgBox_Title"),
+                        Translations.Tr("All benchmarks have been successful"),
+                        Translations.Tr("Benchmark finished report"),
                         MessageBoxButtons.OK);
                 }
-                else if (StartMining == false)
+                else if (StartMiningOnFinish == false)
                 {
                     var result = MessageBox.Show(
-                        International.GetText("FormBenchmark_Benchmark_Finish_Fail_MsgBox_Msg"),
-                        International.GetText("FormBenchmark_Benchmark_Finish_MsgBox_Title"),
-                        MessageBoxButtons.RetryCancel);
+                        //Translations.Tr("Not all benchmarks finished successfully. Retry to re-run the benchmark process against unbenchmarked algos or Cancel to disable unbenchmarked algorithms."),
+                        Translations.Tr("Not all benchmarks finished successfully."),
+                        Translations.Tr("Benchmark finished report"),
+                        MessageBoxButtons.OK);
 
-                    if (result == DialogResult.Retry)
-                    {
-                        StartButonClick();
-                        return;
-                    }
+                    //if (result == DialogResult.Retry)
+                    //{
+                    //    StartButonClick();
+                    //    return;
+                    //}
 
-                    // get unbenchmarked from criteria and disable
-                    CalcBenchmarkDevicesAlgorithmQueue();
-                    foreach (var deviceAlgoQueue in _benchmarkDevicesAlgorithmQueue)
-                    foreach (var algorithm in deviceAlgoQueue.Item2)
-                        algorithm.Enabled = false;
+                    // update algos status
+                    BenchmarkManager.CalcBenchDevAlgoQueue();
                 }
 
-                if (ExitWhenFinished || StartMining) Close();
+                if (_exitWhenFinished || StartMiningOnFinish) Close();
             });
         }
 
-        #endregion
+#endregion
 
         private void CloseBtn_Click(object sender, EventArgs e)
         {
@@ -505,26 +326,31 @@ namespace NiceHashMiner.Forms
 
         private void FormBenchmark_New_FormClosing(object sender, FormClosingEventArgs e)
         {
-            if (InBenchmark)
+            BenchmarkManager.OnAlgoStatusUpdate -= SetCurrentStatus;
+            BenchmarkManager.OnStepUp -= StepUpBenchmarkStepProgress;
+            BenchmarkManager.OnBenchmarkEnd -= EndBenchmark;
+            if (ApplicationStateManager.BurnCalled) {
+                return;
+            }
+            if (BenchmarkManager.InBenchmark)
             {
                 e.Cancel = true;
                 return;
             }
 
             // disable all pending benchmark
-            foreach (var cDev in ComputeDeviceManager.Available.Devices)
-            foreach (var algorithm in cDev.GetAlgorithmSettings())
-                algorithm.ClearBenchmarkPending();
+            foreach (var cDev in AvailableDevices.Devices)
+            {
+                foreach (var algorithm in cDev.AlgorithmSettings)
+                {
+                    algorithm.ClearBenchmarkPending();
+                }
+            }
+
+            BenchmarkManager.ClearQueue();
 
             // save already benchmarked algorithms
             ConfigManager.CommitBenchmarks();
-            // check devices without benchmarks
-            foreach (var cdev in ComputeDeviceManager.Available.Devices)
-                if (cdev.Enabled)
-                {
-                    var enabled = cdev.GetAlgorithmSettings().Any(algo => algo.BenchmarkSpeed > 0);
-                    cdev.Enabled = enabled;
-                }
         }
 
         private void DevicesListView1_ItemSelectionChanged(object sender, ListViewItemSelectionChangedEventArgs e)
@@ -532,13 +358,13 @@ namespace NiceHashMiner.Forms
             //algorithmSettingsControl1.Deselect();
             // show algorithms
             var selectedComputeDevice =
-                ComputeDeviceManager.Available.GetCurrentlySelectedComputeDevice(e.ItemIndex, true);
+                AvailableDevices.GetCurrentlySelectedComputeDevice(e.ItemIndex, true);
             algorithmsListView1.SetAlgorithms(selectedComputeDevice, selectedComputeDevice.Enabled);
         }
 
         private void RadioButton_SelectedUnbenchmarked_CheckedChanged_1(object sender, EventArgs e)
         {
-            _algorithmOption = AlgorithmBenchmarkSettingsType.SelectedUnbenchmarkedAlgorithms;
+            BenchmarkManager.Selection = BenchmarkSelection.SelectedUnbenchmarkedAlgorithms;
             CalcBenchmarkDevicesAlgorithmQueue();
             devicesListViewEnableControl1.ResetListItemColors();
             algorithmsListView1.ResetListItemColors();
@@ -546,7 +372,7 @@ namespace NiceHashMiner.Forms
 
         private void RadioButton_RE_SelectedUnbenchmarked_CheckedChanged(object sender, EventArgs e)
         {
-            _algorithmOption = AlgorithmBenchmarkSettingsType.ReBecnhSelectedAlgorithms;
+            BenchmarkManager.Selection = BenchmarkSelection.ReBecnhSelectedAlgorithms;
             CalcBenchmarkDevicesAlgorithmQueue();
             devicesListViewEnableControl1.ResetListItemColors();
             algorithmsListView1.ResetListItemColors();
@@ -554,24 +380,16 @@ namespace NiceHashMiner.Forms
 
         private void CheckBox_StartMiningAfterBenchmark_CheckedChanged(object sender, EventArgs e)
         {
-            StartMining = checkBox_StartMiningAfterBenchmark.Checked;
-        }
-
-        private enum BenchmarkSettingsStatus
-        {
-            NONE = 0,
-            TODO,
-            DISABLED_NONE,
-            DISABLED_TODO
+            StartMiningOnFinish = checkBox_StartMiningAfterBenchmark.Checked;
         }
 
 
-        #region Benchmark progress GUI stuff
+#region Benchmark progress GUI stuff
 
         private void SetLabelBenchmarkSteps(int current, int max)
         {
             labelBenchmarkSteps.Text =
-                string.Format(International.GetText("FormBenchmark_Benchmark_Step"), current, max);
+                string.Format(Translations.Tr("Benchmark step ( {0} / {1} )"), current, max);
         }
 
         private void ResetBenchmarkProgressStatus()

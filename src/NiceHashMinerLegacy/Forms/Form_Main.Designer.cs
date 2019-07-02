@@ -20,7 +20,7 @@
             base.Dispose(disposing);
         }
 
-        #region Windows Form Designer generated code
+#region Windows Form Designer generated code
 
         /// <summary>
         /// Required method for Designer support - do not modify
@@ -52,38 +52,46 @@
             this.buttonBenchmark = new System.Windows.Forms.Button();
             this.buttonSettings = new System.Windows.Forms.Button();
             this.buttonLogo = new System.Windows.Forms.Button();
-            this.linkLabelChooseBTCWallet = new System.Windows.Forms.LinkLabel();
             this.notifyIcon1 = new System.Windows.Forms.NotifyIcon(this.components);
+            this.contextMenuStrip1 = new System.Windows.Forms.ContextMenuStrip(this.components);
+            this.toolStripMenuItemShow = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+            this.exitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.labelDemoMode = new System.Windows.Forms.Label();
-            this.flowLayoutPanelRates = new System.Windows.Forms.FlowLayoutPanel();
-            this.groupBox1 = new System.Windows.Forms.GroupBox();
-            this.label_NotProfitable = new System.Windows.Forms.Label();
-            this.devicesListViewEnableControl1 = new NiceHashMiner.Forms.Components.DevicesListViewEnableControl();
             this.buttonHelp = new System.Windows.Forms.Button();
             this.linkLabelNewVersion = new System.Windows.Forms.LinkLabel();
             this.toolTip1 = new System.Windows.Forms.ToolTip(this.components);
+            this.buttonPlugins = new System.Windows.Forms.Button();
+            this.errorProvider1 = new System.Windows.Forms.ErrorProvider(this.components);
+            this.errorWarningProvider2 = new System.Windows.Forms.ErrorProvider(this.components);
+            this.linkLabelAdminPrivs = new System.Windows.Forms.LinkLabel();
+            this.devicesMainBoard1 = new NiceHashMiner.Forms.Components.DevicesMainBoardDevicesListViewSpeedControl();
+            this.labelWarningNotProfitableOrNoIntenret = new System.Windows.Forms.Label();
             this.statusStrip1.SuspendLayout();
-            this.groupBox1.SuspendLayout();
+            this.contextMenuStrip1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.errorProvider1)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.errorWarningProvider2)).BeginInit();
             this.SuspendLayout();
             // 
             // buttonStartMining
             // 
-            this.buttonStartMining.Location = new System.Drawing.Point(452, 162);
+            this.buttonStartMining.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.buttonStartMining.Location = new System.Drawing.Point(680, 162);
             this.buttonStartMining.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.buttonStartMining.Name = "buttonStartMining";
             this.buttonStartMining.Size = new System.Drawing.Size(89, 23);
             this.buttonStartMining.TabIndex = 6;
-            this.buttonStartMining.Text = "&Start";
+            this.buttonStartMining.Text = "&Start All";
             this.buttonStartMining.UseVisualStyleBackColor = true;
             this.buttonStartMining.Click += new System.EventHandler(this.ButtonStartMining_Click);
             // 
             // textBoxBTCAddress
             // 
             this.textBoxBTCAddress.Location = new System.Drawing.Point(113, 39);
+            this.textBoxBTCAddress.MaxLength = 34;
             this.textBoxBTCAddress.Name = "textBoxBTCAddress";
             this.textBoxBTCAddress.Size = new System.Drawing.Size(237, 20);
             this.textBoxBTCAddress.TabIndex = 1;
-            this.textBoxBTCAddress.Leave += new System.EventHandler(this.TextBoxCheckBoxMain_Leave);
             // 
             // labelServiceLocation
             // 
@@ -109,16 +117,15 @@
             this.comboBoxLocation.Name = "comboBoxLocation";
             this.comboBoxLocation.Size = new System.Drawing.Size(121, 21);
             this.comboBoxLocation.TabIndex = 0;
-            this.comboBoxLocation.Leave += new System.EventHandler(this.TextBoxCheckBoxMain_Leave);
             // 
             // labelBitcoinAddress
             // 
             this.labelBitcoinAddress.AutoSize = true;
             this.labelBitcoinAddress.Location = new System.Drawing.Point(8, 42);
             this.labelBitcoinAddress.Name = "labelBitcoinAddress";
-            this.labelBitcoinAddress.Size = new System.Drawing.Size(82, 13);
+            this.labelBitcoinAddress.Size = new System.Drawing.Size(83, 13);
             this.labelBitcoinAddress.TabIndex = 99;
-            this.labelBitcoinAddress.Text = "Bitcoin address:";
+            this.labelBitcoinAddress.Text = "Bitcoin Address:";
             // 
             // statusStrip1
             // 
@@ -134,9 +141,9 @@
             this.toolStripStatusLabelBalanceDollarText,
             this.toolStripStatusLabelBalanceDollarValue,
             this.toolStripStatusLabel10});
-            this.statusStrip1.Location = new System.Drawing.Point(0, 306);
+            this.statusStrip1.Location = new System.Drawing.Point(0, 274);
             this.statusStrip1.Name = "statusStrip1";
-            this.statusStrip1.Size = new System.Drawing.Size(565, 25);
+            this.statusStrip1.Size = new System.Drawing.Size(776, 25);
             this.statusStrip1.TabIndex = 8;
             this.statusStrip1.Text = "statusStrip1";
             // 
@@ -156,7 +163,7 @@
             // toolStripStatusLabelBTCDayText
             // 
             this.toolStripStatusLabelBTCDayText.Name = "toolStripStatusLabelBTCDayText";
-            this.toolStripStatusLabelBTCDayText.Size = new System.Drawing.Size(52, 20);
+            this.toolStripStatusLabelBTCDayText.Size = new System.Drawing.Size(51, 20);
             this.toolStripStatusLabelBTCDayText.Text = "BTC/Day";
             // 
             // toolStripStatusLabelBTCDayValue
@@ -182,7 +189,7 @@
             // toolStripStatusLabelBalanceBTCCode
             // 
             this.toolStripStatusLabelBalanceBTCCode.Name = "toolStripStatusLabelBalanceBTCCode";
-            this.toolStripStatusLabelBalanceBTCCode.Size = new System.Drawing.Size(27, 20);
+            this.toolStripStatusLabelBalanceBTCCode.Size = new System.Drawing.Size(26, 20);
             this.toolStripStatusLabelBalanceBTCCode.Text = "BTC";
             // 
             // toolStripStatusLabelBalanceDollarText
@@ -211,7 +218,7 @@
             // linkLabelCheckStats
             // 
             this.linkLabelCheckStats.AutoSize = true;
-            this.linkLabelCheckStats.Location = new System.Drawing.Point(175, 90);
+            this.linkLabelCheckStats.Location = new System.Drawing.Point(12, 88);
             this.linkLabelCheckStats.Name = "linkLabelCheckStats";
             this.linkLabelCheckStats.Size = new System.Drawing.Size(113, 13);
             this.linkLabelCheckStats.TabIndex = 9;
@@ -224,9 +231,9 @@
             this.labelWorkerName.AutoSize = true;
             this.labelWorkerName.Location = new System.Drawing.Point(8, 68);
             this.labelWorkerName.Name = "labelWorkerName";
-            this.labelWorkerName.Size = new System.Drawing.Size(74, 13);
+            this.labelWorkerName.Size = new System.Drawing.Size(76, 13);
             this.labelWorkerName.TabIndex = 99;
-            this.labelWorkerName.Text = "Worker name:";
+            this.labelWorkerName.Text = "Worker Name:";
             // 
             // textBoxWorkerName
             // 
@@ -234,23 +241,24 @@
             this.textBoxWorkerName.Name = "textBoxWorkerName";
             this.textBoxWorkerName.Size = new System.Drawing.Size(120, 20);
             this.textBoxWorkerName.TabIndex = 2;
-            this.textBoxWorkerName.Leave += new System.EventHandler(this.TextBoxCheckBoxMain_Leave);
             // 
             // buttonStopMining
             // 
+            this.buttonStopMining.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.buttonStopMining.Enabled = false;
-            this.buttonStopMining.Location = new System.Drawing.Point(452, 188);
+            this.buttonStopMining.Location = new System.Drawing.Point(680, 188);
             this.buttonStopMining.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.buttonStopMining.Name = "buttonStopMining";
             this.buttonStopMining.Size = new System.Drawing.Size(89, 23);
             this.buttonStopMining.TabIndex = 7;
-            this.buttonStopMining.Text = "St&op";
+            this.buttonStopMining.Text = "&Stop All";
             this.buttonStopMining.UseVisualStyleBackColor = true;
             this.buttonStopMining.Click += new System.EventHandler(this.ButtonStopMining_Click);
             // 
             // buttonBenchmark
             // 
-            this.buttonBenchmark.Location = new System.Drawing.Point(452, 109);
+            this.buttonBenchmark.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.buttonBenchmark.Location = new System.Drawing.Point(680, 109);
             this.buttonBenchmark.Margin = new System.Windows.Forms.Padding(3, 3, 3, 2);
             this.buttonBenchmark.Name = "buttonBenchmark";
             this.buttonBenchmark.Size = new System.Drawing.Size(89, 23);
@@ -261,7 +269,8 @@
             // 
             // buttonSettings
             // 
-            this.buttonSettings.Location = new System.Drawing.Point(452, 135);
+            this.buttonSettings.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.buttonSettings.Location = new System.Drawing.Point(680, 135);
             this.buttonSettings.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.buttonSettings.Name = "buttonSettings";
             this.buttonSettings.Size = new System.Drawing.Size(89, 23);
@@ -272,11 +281,12 @@
             // 
             // buttonLogo
             // 
+            this.buttonLogo.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.buttonLogo.Cursor = System.Windows.Forms.Cursors.Hand;
             this.buttonLogo.FlatAppearance.BorderSize = 0;
             this.buttonLogo.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.buttonLogo.Image = global::NiceHashMiner.Properties.Resources.NHM_logo_xsmall_light;
-            this.buttonLogo.Location = new System.Drawing.Point(355, 9);
+            this.buttonLogo.Location = new System.Drawing.Point(564, 8);
             this.buttonLogo.Name = "buttonLogo";
             this.buttonLogo.Size = new System.Drawing.Size(205, 52);
             this.buttonLogo.TabIndex = 11;
@@ -285,20 +295,39 @@
             this.buttonLogo.UseVisualStyleBackColor = true;
             this.buttonLogo.Click += new System.EventHandler(this.ButtonLogo_Click);
             // 
-            // linkLabelChooseBTCWallet
-            // 
-            this.linkLabelChooseBTCWallet.AutoSize = true;
-            this.linkLabelChooseBTCWallet.Location = new System.Drawing.Point(7, 90);
-            this.linkLabelChooseBTCWallet.Name = "linkLabelChooseBTCWallet";
-            this.linkLabelChooseBTCWallet.Size = new System.Drawing.Size(165, 13);
-            this.linkLabelChooseBTCWallet.TabIndex = 10;
-            this.linkLabelChooseBTCWallet.TabStop = true;
-            this.linkLabelChooseBTCWallet.Text = "Help me choose my Bitcoin wallet";
-            this.linkLabelChooseBTCWallet.LinkClicked += new System.Windows.Forms.LinkLabelLinkClickedEventHandler(this.LinkLabelChooseBTCWallet_LinkClicked);
-            // 
             // notifyIcon1
             // 
+            this.notifyIcon1.ContextMenuStrip = this.contextMenuStrip1;
             this.notifyIcon1.DoubleClick += new System.EventHandler(this.NotifyIcon1_DoubleClick);
+            this.notifyIcon1.MouseClick += new System.Windows.Forms.MouseEventHandler(this.NotifyIcon1_MouseClick);
+            // 
+            // contextMenuStrip1
+            // 
+            this.contextMenuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.toolStripMenuItemShow,
+            this.toolStripSeparator1,
+            this.exitToolStripMenuItem});
+            this.contextMenuStrip1.Name = "contextMenuStrip1";
+            this.contextMenuStrip1.Size = new System.Drawing.Size(104, 54);
+            // 
+            // toolStripMenuItemShow
+            // 
+            this.toolStripMenuItemShow.Name = "toolStripMenuItemShow";
+            this.toolStripMenuItemShow.Size = new System.Drawing.Size(103, 22);
+            this.toolStripMenuItemShow.Text = "Show";
+            this.toolStripMenuItemShow.Click += new System.EventHandler(this.ToolStripMenuItemShow_Click);
+            // 
+            // toolStripSeparator1
+            // 
+            this.toolStripSeparator1.Name = "toolStripSeparator1";
+            this.toolStripSeparator1.Size = new System.Drawing.Size(100, 6);
+            // 
+            // exitToolStripMenuItem
+            // 
+            this.exitToolStripMenuItem.Name = "exitToolStripMenuItem";
+            this.exitToolStripMenuItem.Size = new System.Drawing.Size(103, 22);
+            this.exitToolStripMenuItem.Text = "Quit";
+            this.exitToolStripMenuItem.Click += new System.EventHandler(this.ExitToolStripMenuItem_Click);
             // 
             // labelDemoMode
             // 
@@ -311,57 +340,11 @@
             this.labelDemoMode.Size = new System.Drawing.Size(498, 25);
             this.labelDemoMode.TabIndex = 100;
             this.labelDemoMode.Text = "NiceHash Miner Legacy is running in DEMO mode!";
-            this.labelDemoMode.Visible = false;
-            // 
-            // flowLayoutPanelRates
-            // 
-            this.flowLayoutPanelRates.AutoScroll = true;
-            this.flowLayoutPanelRates.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.flowLayoutPanelRates.FlowDirection = System.Windows.Forms.FlowDirection.TopDown;
-            this.flowLayoutPanelRates.Location = new System.Drawing.Point(3, 16);
-            this.flowLayoutPanelRates.Name = "flowLayoutPanelRates";
-            this.flowLayoutPanelRates.Size = new System.Drawing.Size(545, 40);
-            this.flowLayoutPanelRates.TabIndex = 107;
-            this.flowLayoutPanelRates.WrapContents = false;
-            // 
-            // groupBox1
-            // 
-            this.groupBox1.Controls.Add(this.label_NotProfitable);
-            this.groupBox1.Controls.Add(this.flowLayoutPanelRates);
-            this.groupBox1.Location = new System.Drawing.Point(9, 246);
-            this.groupBox1.Name = "groupBox1";
-            this.groupBox1.Size = new System.Drawing.Size(551, 59);
-            this.groupBox1.TabIndex = 108;
-            this.groupBox1.TabStop = false;
-            this.groupBox1.Text = "Group/Device Rates:";
-            // 
-            // label_NotProfitable
-            // 
-            this.label_NotProfitable.AutoSize = true;
-            this.label_NotProfitable.Font = new System.Drawing.Font("Microsoft Sans Serif", 14.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(238)));
-            this.label_NotProfitable.ForeColor = System.Drawing.Color.Red;
-            this.label_NotProfitable.Location = new System.Drawing.Point(6, 0);
-            this.label_NotProfitable.Name = "label_NotProfitable";
-            this.label_NotProfitable.Size = new System.Drawing.Size(366, 24);
-            this.label_NotProfitable.TabIndex = 110;
-            this.label_NotProfitable.Text = "CURRENTLY MINING NOT PROFITABLE.";
-            // 
-            // devicesListViewEnableControl1
-            // 
-            this.devicesListViewEnableControl1.BenchmarkCalculation = null;
-            this.devicesListViewEnableControl1.FirstColumnText = "Enabled";
-            this.devicesListViewEnableControl1.IsInBenchmark = false;
-            this.devicesListViewEnableControl1.IsMining = false;
-            this.devicesListViewEnableControl1.Location = new System.Drawing.Point(11, 109);
-            this.devicesListViewEnableControl1.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
-            this.devicesListViewEnableControl1.Name = "devicesListViewEnableControl1";
-            this.devicesListViewEnableControl1.SaveToGeneralConfig = false;
-            this.devicesListViewEnableControl1.Size = new System.Drawing.Size(435, 129);
-            this.devicesListViewEnableControl1.TabIndex = 109;
             // 
             // buttonHelp
             // 
-            this.buttonHelp.Location = new System.Drawing.Point(452, 215);
+            this.buttonHelp.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.buttonHelp.Location = new System.Drawing.Point(680, 242);
             this.buttonHelp.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.buttonHelp.Name = "buttonHelp";
             this.buttonHelp.Size = new System.Drawing.Size(89, 23);
@@ -373,23 +356,79 @@
             // linkLabelNewVersion
             // 
             this.linkLabelNewVersion.AutoSize = true;
-            this.linkLabelNewVersion.Location = new System.Drawing.Point(292, 77);
+            this.linkLabelNewVersion.Location = new System.Drawing.Point(581, 68);
             this.linkLabelNewVersion.Name = "linkLabelNewVersion";
-            this.linkLabelNewVersion.Size = new System.Drawing.Size(0, 13);
+            this.linkLabelNewVersion.Size = new System.Drawing.Size(84, 13);
             this.linkLabelNewVersion.TabIndex = 110;
+            this.linkLabelNewVersion.TabStop = true;
+            this.linkLabelNewVersion.Text = "NEW VERSION";
             this.linkLabelNewVersion.LinkClicked += new System.Windows.Forms.LinkLabelLinkClickedEventHandler(this.LinkLabelNewVersion_LinkClicked);
+            // 
+            // buttonPlugins
+            // 
+            this.buttonPlugins.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.buttonPlugins.Location = new System.Drawing.Point(680, 215);
+            this.buttonPlugins.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.buttonPlugins.Name = "buttonPlugins";
+            this.buttonPlugins.Size = new System.Drawing.Size(89, 23);
+            this.buttonPlugins.TabIndex = 112;
+            this.buttonPlugins.Text = "&Plugins";
+            this.buttonPlugins.UseVisualStyleBackColor = true;
+            this.buttonPlugins.Click += new System.EventHandler(this.ButtonPlugins_Click);
+            // 
+            // errorProvider1
+            // 
+            this.errorProvider1.ContainerControl = this;
+            // 
+            // errorWarningProvider2
+            // 
+            this.errorWarningProvider2.ContainerControl = this;
+            // 
+            // linkLabelAdminPrivs
+            // 
+            this.linkLabelAdminPrivs.AutoSize = true;
+            this.linkLabelAdminPrivs.Location = new System.Drawing.Point(168, 88);
+            this.linkLabelAdminPrivs.Name = "linkLabelAdminPrivs";
+            this.linkLabelAdminPrivs.Size = new System.Drawing.Size(182, 13);
+            this.linkLabelAdminPrivs.TabIndex = 113;
+            this.linkLabelAdminPrivs.TabStop = true;
+            this.linkLabelAdminPrivs.Text = "Enable NVIDIA power mode settings!";
+            // 
+            // devicesMainBoard1
+            // 
+            this.devicesMainBoard1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.devicesMainBoard1.Location = new System.Drawing.Point(10, 109);
+            this.devicesMainBoard1.Name = "devicesMainBoard1";
+            this.devicesMainBoard1.SecondPanelVisible = false;
+            this.devicesMainBoard1.Size = new System.Drawing.Size(664, 160);
+            this.devicesMainBoard1.TabIndex = 111;
+            // 
+            // labelWarningNotProfitableOrNoIntenret
+            // 
+            this.labelWarningNotProfitableOrNoIntenret.AutoSize = true;
+            this.labelWarningNotProfitableOrNoIntenret.BackColor = System.Drawing.Color.Transparent;
+            this.labelWarningNotProfitableOrNoIntenret.Font = new System.Drawing.Font("Microsoft Sans Serif", 15.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.labelWarningNotProfitableOrNoIntenret.ForeColor = System.Drawing.Color.Red;
+            this.labelWarningNotProfitableOrNoIntenret.Location = new System.Drawing.Point(12, 81);
+            this.labelWarningNotProfitableOrNoIntenret.Name = "labelWarningNotProfitableOrNoIntenret";
+            this.labelWarningNotProfitableOrNoIntenret.Size = new System.Drawing.Size(612, 25);
+            this.labelWarningNotProfitableOrNoIntenret.TabIndex = 114;
+            this.labelWarningNotProfitableOrNoIntenret.Text = "WARNING NOT MINING NOT PROFITABLE OR NO INTERNET";
             // 
             // Form_Main
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(565, 331);
+            this.ClientSize = new System.Drawing.Size(776, 299);
+            this.Controls.Add(this.labelWarningNotProfitableOrNoIntenret);
+            this.Controls.Add(this.linkLabelAdminPrivs);
+            this.Controls.Add(this.buttonPlugins);
+            this.Controls.Add(this.devicesMainBoard1);
             this.Controls.Add(this.linkLabelNewVersion);
             this.Controls.Add(this.buttonHelp);
-            this.Controls.Add(this.devicesListViewEnableControl1);
-            this.Controls.Add(this.groupBox1);
             this.Controls.Add(this.labelDemoMode);
-            this.Controls.Add(this.linkLabelChooseBTCWallet);
             this.Controls.Add(this.buttonLogo);
             this.Controls.Add(this.buttonSettings);
             this.Controls.Add(this.buttonBenchmark);
@@ -403,26 +442,25 @@
             this.Controls.Add(this.labelServiceLocation);
             this.Controls.Add(this.textBoxBTCAddress);
             this.Controls.Add(this.buttonStartMining);
-            this.Enabled = false;
-            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
-            this.MinimumSize = new System.Drawing.Size(576, 316);
+            this.MinimumSize = new System.Drawing.Size(572, 303);
             this.Name = "Form_Main";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "NiceHash Miner Legacy";
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Form1_FormClosing);
             this.Shown += new System.EventHandler(this.Form_Main_Shown);
+            this.ResizeEnd += new System.EventHandler(this.Form_Main_ResizeEnd);
             this.Resize += new System.EventHandler(this.Form1_Resize);
             this.statusStrip1.ResumeLayout(false);
             this.statusStrip1.PerformLayout();
-            this.groupBox1.ResumeLayout(false);
-            this.groupBox1.PerformLayout();
+            this.contextMenuStrip1.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this.errorProvider1)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.errorWarningProvider2)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
 
         }
 
-        #endregion
+#endregion
 
         private System.Windows.Forms.Button buttonStartMining;
         private System.Windows.Forms.Label labelServiceLocation;
@@ -448,17 +486,20 @@
         private System.Windows.Forms.TextBox textBoxBTCAddress;
         private System.Windows.Forms.ComboBox comboBoxLocation;
         private System.Windows.Forms.TextBox textBoxWorkerName;
-        private System.Windows.Forms.LinkLabel linkLabelChooseBTCWallet;
         private System.Windows.Forms.Label labelDemoMode;
-        private System.Windows.Forms.FlowLayoutPanel flowLayoutPanelRates;
-        private System.Windows.Forms.GroupBox groupBox1;
-        private System.Windows.Forms.Label label_NotProfitable;
-        private Forms.Components.DevicesListViewEnableControl devicesListViewEnableControl1;
         private System.Windows.Forms.Button buttonHelp;
         private System.Windows.Forms.LinkLabel linkLabelNewVersion;
         private System.Windows.Forms.ToolTip toolTip1;
+        private Forms.Components.DevicesMainBoardDevicesListViewSpeedControl devicesMainBoard1;
+        private System.Windows.Forms.Button buttonPlugins;
+        private System.Windows.Forms.ContextMenuStrip contextMenuStrip1;
+        private System.Windows.Forms.ToolStripMenuItem exitToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem toolStripMenuItemShow;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
+        private System.Windows.Forms.ErrorProvider errorProvider1;
+        private System.Windows.Forms.ErrorProvider errorWarningProvider2;
+        private System.Windows.Forms.LinkLabel linkLabelAdminPrivs;
+        private System.Windows.Forms.Label labelWarningNotProfitableOrNoIntenret;
     }
 }
-
-
 

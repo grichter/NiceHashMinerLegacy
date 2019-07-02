@@ -1,4 +1,5 @@
 ﻿using NiceHashMiner.Configs;
+using NiceHashMinerLegacy.Common;
 using System;
 using System.Collections.Specialized;
 using System.Net;
@@ -34,7 +35,7 @@ namespace NiceHashMiner
             }
             catch (Exception ex)
             {
-                Helpers.ConsolePrint("NICEHASH", ex.Message);
+                Logger.Info("Ifttt", $"Error occured: {ex.Message}");
             }
         }
     }

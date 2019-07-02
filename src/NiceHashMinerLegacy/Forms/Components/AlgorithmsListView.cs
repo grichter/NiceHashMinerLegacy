@@ -5,17 +5,22 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using NiceHashMiner.Algorithms;
+using NiceHashMiner.Plugin;
+using NiceHashMiner.Miners.IntegratedPlugins;
 
 namespace NiceHashMiner.Forms.Components
 {
     public partial class AlgorithmsListView : UserControl
     {
-        private const int ENABLED = 0;
-        private const int ALGORITHM = 1;
-        private const int SPEED = 2;
-        private const int SECSPEED = 3;
-        private const int RATIO = 4;
-        private const int RATE = 5;
+        public enum Column : int
+        {
+            ENABLED = 0,
+            ALGORITHM,
+            MINER,
+            SPEEDS,
+            RATIO,
+            RATE,
+        }
 
         public interface IAlgorithmsListView
         {
@@ -89,47 +94,26 @@ namespace NiceHashMiner.Forms.Components
             IsInBenchmark = false;
         }
 
-        public void InitLocale()
-        {
-            listViewAlgorithms.Columns[ENABLED].Text = International.GetText("AlgorithmsListView_Enabled");
-            listViewAlgorithms.Columns[ALGORITHM].Text = International.GetText("AlgorithmsListView_Algorithm");
-            listViewAlgorithms.Columns[SPEED].Text = International.GetText("AlgorithmsListView_Speed");
-            listViewAlgorithms.Columns[SECSPEED].Text = International.GetText("Form_DcriValues_SecondarySpeed");
-            listViewAlgorithms.Columns[RATIO].Text = International.GetText("AlgorithmsListView_Ratio");
-            listViewAlgorithms.Columns[RATE].Text = International.GetText("AlgorithmsListView_Rate");
-        }
-
         public void SetAlgorithms(ComputeDevice computeDevice, bool isEnabled)
         {
             _computeDevice = computeDevice;
             listViewAlgorithms.BeginUpdate();
             listViewAlgorithms.Items.Clear();
-            foreach (var alg in computeDevice.GetAlgorithmSettings())
+            foreach (var alg in computeDevice.AlgorithmSettings)
             {
                 var lvi = new ListViewItem();
 
-                var name = "";
-                var secondarySpeed = "";
-                var payingRatio = "";
-                if (alg is DualAlgorithm dualAlg)
-                {
-                    name = "  + " + dualAlg.SecondaryAlgorithmName;
-                    secondarySpeed = dualAlg.SecondaryBenchmarkSpeedString();
-                    payingRatio = dualAlg.SecondaryCurPayingRatio;
-                }
-                else
-                {
-                    name = $"{alg.AlgorithmName} ({alg.MinerBaseTypeName})";
-                    payingRatio = alg.CurPayingRatio;
-                }
+                var name = alg.AlgorithmName;
+                var minerName = alg.MinerBaseTypeName;
+                var payingRatio = alg.CurPayingRatio;
 
                 lvi.SubItems.Add(name);
 
                 //sub.Tag = alg.Value;
+                lvi.SubItems.Add(minerName);
                 lvi.SubItems.Add(alg.BenchmarkSpeedString());
-                lvi.SubItems.Add(secondarySpeed);
                 lvi.SubItems.Add(payingRatio);
-                lvi.SubItems.Add(alg.CurPayingRate);
+                lvi.SubItems.Add(alg.CurPayingRateStr);
                 lvi.Tag = alg;
                 lvi.Checked = alg.Enabled;
                 listViewAlgorithms.Items.Add(lvi);
@@ -146,9 +130,7 @@ namespace NiceHashMiner.Forms.Components
                 foreach (ListViewItem lvi in listViewAlgorithms.Items)
                 {
                     var algo = lvi.Tag as Algorithm;
-                    lvi.SubItems[SPEED].Text = algo?.BenchmarkSpeedString();
-                    if (algo is DualAlgorithm dualAlg)
-                        lvi.SubItems[SECSPEED].Text = dualAlg.SecondaryBenchmarkSpeedString();
+                    lvi.SubItems[(int)Column.SPEEDS].Text = algo?.BenchmarkSpeedString();
                     _listItemCheckColorSetter.LviSetColor(lvi);
                 }
 
@@ -207,18 +189,10 @@ namespace NiceHashMiner.Forms.Components
                         if (lvi.Tag is Algorithm algo && algo.AlgorithmStringID == algorithm.AlgorithmStringID)
                         {
                             // TODO handle numbers
-                            lvi.SubItems[SPEED].Text = algorithm.BenchmarkSpeedString();
-                            lvi.SubItems[RATE].Text = algorithm.CurPayingRate;
-                            
-                            if (algorithm is DualAlgorithm dualAlg)
-                            {
-                                lvi.SubItems[RATIO].Text = dualAlg.SecondaryCurPayingRatio;
-                                lvi.SubItems[SECSPEED].Text = dualAlg.SecondaryBenchmarkSpeedString();
-                            }
-                            else
-                            {
-                                lvi.SubItems[RATIO].Text = algorithm.CurPayingRatio;
-                            }
+                            lvi.SubItems[(int)Column.SPEEDS].Text = algorithm.BenchmarkSpeedString();
+                            lvi.SubItems[(int)Column.RATE].Text = algorithm.CurPayingRateStr;
+                            // TODO handle DUAL first + second paying ratio X+Y
+                            lvi.SubItems[(int)Column.RATIO].Text = algorithm.CurPayingRatio;
 
                             _listItemCheckColorSetter.LviSetColor(lvi);
                             break;
@@ -238,7 +212,7 @@ namespace NiceHashMiner.Forms.Components
                 {
                     var disableAllItems = new ToolStripMenuItem
                     {
-                        Text = International.GetText("AlgorithmsListView_ContextMenu_DisableAll")
+                        Text = Translations.Tr("Disable All Algorithms")
                     };
                     disableAllItems.Click += ToolStripMenuItemDisableAll_Click;
                     contextMenuStrip1.Items.Add(disableAllItems);
@@ -247,7 +221,7 @@ namespace NiceHashMiner.Forms.Components
                 {
                     var enableAllItems = new ToolStripMenuItem
                     {
-                        Text = International.GetText("AlgorithmsListView_ContextMenu_EnableAll")
+                        Text = Translations.Tr("Enable All Algorithms")
                     };
                     enableAllItems.Click += ToolStripMenuItemEnableAll_Click;
                     contextMenuStrip1.Items.Add(enableAllItems);
@@ -256,7 +230,7 @@ namespace NiceHashMiner.Forms.Components
                 {
                     var testItem = new ToolStripMenuItem
                     {
-                        Text = International.GetText("AlgorithmsListView_ContextMenu_TestItem")
+                        Text = Translations.Tr("Enable Only This")
                     };
                     testItem.Click += ToolStripMenuItemTest_Click;
                     contextMenuStrip1.Items.Add(testItem);
@@ -265,7 +239,7 @@ namespace NiceHashMiner.Forms.Components
                 {
                     var enableBenchedItem = new ToolStripMenuItem
                     {
-                        Text = International.GetText("AlgorithmsListView_ContextMenu_EnableBenched")
+                        Text = Translations.Tr("Enable Benchmarked Only")
                     };
                     enableBenchedItem.Click += ToolStripMenuItemEnableBenched_Click;
                     contextMenuStrip1.Items.Add(enableBenchedItem);
@@ -274,45 +248,10 @@ namespace NiceHashMiner.Forms.Components
                 {
                     var clearItem = new ToolStripMenuItem
                     {
-                        Text = International.GetText("AlgorithmsListView_ContextMenu_ClearItem")
+                        Text = Translations.Tr("Clear Algorithm Speed")
                     };
                     clearItem.Click += ToolStripMenuItemClear_Click;
                     contextMenuStrip1.Items.Add(clearItem);
-                }
-                // open dcri
-                {
-                    var dcriMenu = new ToolStripMenuItem
-                    {
-                        Text = International.GetText("Form_DcriValues_Title")
-                    };
-
-                    if (listViewAlgorithms.SelectedItems.Count > 0
-                        && listViewAlgorithms.SelectedItems[0].Tag is DualAlgorithm dualAlg)
-                    {
-                        dcriMenu.Enabled = true;
-
-                        var openDcri = new ToolStripMenuItem
-                        {
-                            Text = International.GetText("AlgorithmsListView_ContextMenu_OpenDcri")
-                        };
-                        openDcri.Click += toolStripMenuItemOpenDcri_Click;
-                        dcriMenu.DropDownItems.Add(openDcri);
-
-                        var tuningEnabled = new ToolStripMenuItem
-                        {
-                            Text = International.GetText("Form_DcriValues_TuningEnabled"),
-                            CheckOnClick = true,
-                            Checked = dualAlg.TuningEnabled
-                        };
-                        tuningEnabled.CheckedChanged += toolStripMenuItemTuningEnabled_Checked;
-                        dcriMenu.DropDownItems.Add(tuningEnabled);
-                    }
-                    else
-                    {
-                        dcriMenu.Enabled = false;
-                    }
-
-                    contextMenuStrip1.Items.Add(dcriMenu);
                 }
                 contextMenuStrip1.Show(Cursor.Position);
             }
@@ -342,15 +281,7 @@ namespace NiceHashMiner.Forms.Components
                 {
                     if (lvi.Tag is Algorithm algorithm)
                     {
-                        algorithm.BenchmarkSpeed = 0;
-                        if (algorithm is DualAlgorithm dualAlgo)
-                        {
-                            dualAlgo.SecondaryBenchmarkSpeed = 0;
-                            dualAlgo.IntensitySpeeds = new Dictionary<int, double>();
-                            dualAlgo.SecondaryIntensitySpeeds = new Dictionary<int, double>();
-                            dualAlgo.IntensityUpToDate = false;
-                        }
-
+                        algorithm.ClearSpeeds();
                         RepaintStatus(_computeDevice.Enabled, _computeDevice.Uuid);
                         // update benchmark status data
                         BenchmarkCalculation?.CalcBenchmarkDevicesAlgorithmQueue();
@@ -372,29 +303,14 @@ namespace NiceHashMiner.Forms.Components
                         lvi.Checked = lvi.Selected;
                         if (lvi.Selected && algorithm.BenchmarkSpeed <= 0)
                         {
-                            // If it has zero speed, set to 1 so it can be tested
+                            // If it has zero speed, set to 1 so it can be tested, must be available only in DEBUG mode!!
+                            #if DEBUG
                             algorithm.BenchmarkSpeed = 1;
+                            #endif
                             RepaintStatus(_computeDevice.Enabled, _computeDevice.Uuid);
                             ComunicationInterface?.ChangeSpeed(lvi);
                         }
                     }
-                }
-            }
-        }
-
-        private void toolStripMenuItemOpenDcri_Click(object sender, EventArgs e)
-        {
-            foreach (ListViewItem lvi in listViewAlgorithms.SelectedItems)
-            {
-                if (lvi.Tag is DualAlgorithm algo)
-                {
-                    var dcriValues = new FormDcriValues(algo);
-                    dcriValues.ShowDialog();
-                    RepaintStatus(_computeDevice.Enabled, _computeDevice.Uuid);
-                    // update benchmark status data
-                    BenchmarkCalculation?.CalcBenchmarkDevicesAlgorithmQueue();
-                    // update settings
-                    ComunicationInterface?.ChangeSpeed(lvi);
                 }
             }
         }
@@ -406,18 +322,6 @@ namespace NiceHashMiner.Forms.Components
                 if (lvi.Tag is Algorithm algorithm && algorithm.BenchmarkSpeed > 0)
                 {
                     lvi.Checked = true;
-                }
-            }
-        }
-
-        private void toolStripMenuItemTuningEnabled_Checked(object sender, EventArgs e)
-        {
-            foreach (ListViewItem lvi in listViewAlgorithms.SelectedItems)
-            {
-                if (lvi.Tag is DualAlgorithm algo)
-                {
-                    algo.TuningEnabled = ((ToolStripMenuItem) sender).Checked;
-                    RepaintStatus(_computeDevice.Enabled, _computeDevice.Uuid);
                 }
             }
         }

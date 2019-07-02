@@ -5,10 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using NiceHashMiner.PInvoke;
 using System.Management;
 using System.Security.Principal;
 using NiceHashMinerLegacy.Common.Enums;
+using System.Linq;
+using NiceHashMinerLegacy.Common;
+using NiceHashMiner.Miners.IntegratedPlugins;
 
 namespace NiceHashMiner
 {
@@ -42,30 +44,6 @@ namespace NiceHashMiner
             return false;
         }
 
-        public static void ConsolePrint(string grp, string text)
-        {
-            // try will prevent an error if something tries to print an invalid character
-            try
-            {
-                // Console.WriteLine does nothing on x64 while debugging with VS, so use Debug. Console.WriteLine works when run from .exe
-#if DEBUG
-                Debug.WriteLine("[" + DateTime.Now.ToLongTimeString() + "] [" + grp + "] " + text);
-#endif
-#if !DEBUG
-            Console.WriteLine("[" +DateTime.Now.ToLongTimeString() + "] [" + grp + "] " + text);
-#endif
-
-                if (ConfigManager.GeneralConfig.LogToFile && Logger.IsInit)
-                    Logger.Log.Info("[" + grp + "] " + text);
-            }
-            catch { }  // Not gonna recursively call here in case something is seriously wrong
-        }
-
-        public static void ConsolePrint(string grp, string text, params object[] arg)
-        {
-            ConsolePrint(grp, string.Format(text, arg));
-        }
-
         public static uint GetIdleTime()
         {
             var lastInPut = new LASTINPUTINFO();
@@ -79,7 +57,7 @@ namespace NiceHashMiner
         {
             //bool failed = false;
 
-            ConsolePrint("NICEHASH", "Trying to enable/disable Windows error reporting");
+            Logger.Info("NICEHASH", "Trying to enable/disable Windows error reporting");
 
             // CurrentUser
             try
@@ -92,40 +70,40 @@ namespace NiceHashMiner
                         if (o != null)
                         {
                             var val = (int) o;
-                            ConsolePrint("NICEHASH", "Current DontShowUI value: " + val);
+                            Logger.Info("NICEHASH", $"Current DontShowUI value: {val}");
 
                             if (val == 0 && en)
                             {
-                                ConsolePrint("NICEHASH", "Setting register value to 1.");
+                                Logger.Info("NICEHASH", "Setting register value to 1.");
                                 rk.SetValue("DontShowUI", 1);
                             }
                             else if (val == 1 && !en)
                             {
-                                ConsolePrint("NICEHASH", "Setting register value to 0.");
+                                Logger.Info("NICEHASH", "Setting register value to 0.");
                                 rk.SetValue("DontShowUI", 0);
                             }
                         }
                         else
                         {
-                            ConsolePrint("NICEHASH", "Registry key not found .. creating one..");
+                            Logger.Info("NICEHASH", "Registry key not found .. creating one..");
                             rk.CreateSubKey("DontShowUI", RegistryKeyPermissionCheck.Default);
-                            ConsolePrint("NICEHASH", "Setting register value to 1..");
+                            Logger.Info("NICEHASH", "Setting register value to 1..");
                             rk.SetValue("DontShowUI", en ? 1 : 0);
                         }
                     }
                     else
-                        ConsolePrint("NICEHASH", "Unable to open SubKey.");
+                        Logger.Info("NICEHASH", "Unable to open SubKey.");
                 }
             }
             catch (Exception ex)
             {
-                ConsolePrint("NICEHASH", "Unable to access registry. Error: " + ex.Message);
+                Logger.Error("NICEHASH", $"Unable to access registry. Error: {ex.Message}");
             }
         }
 
-        public static string FormatSpeedOutput(double speed, string separator = " ")
+        public static string FormatSpeedOutput(double speed, AlgorithmType algorithmType, string separator = " ")
         {
-            string ret;
+            string ret = "";
 
             if (speed < 1000)
                 ret = (speed).ToString("F3", CultureInfo.InvariantCulture) + separator;
@@ -136,85 +114,46 @@ namespace NiceHashMiner
             else
                 ret = (speed * 0.000000001).ToString("F3", CultureInfo.InvariantCulture) + separator + "G";
 
-            return ret;
-        }
-
-        public static string FormatDualSpeedOutput(double primarySpeed, double secondarySpeed=0, AlgorithmType algo = AlgorithmType.NONE) 
-        {
-            string ret;
-            if (secondarySpeed > 0)
-            {
-                ret = FormatSpeedOutput(primarySpeed, "") + "/" + FormatSpeedOutput(secondarySpeed, "") + " ";
-            }
-            else
-            {
-                ret = FormatSpeedOutput(primarySpeed);
-            }
-
-            string unit;
-
-            switch (algo)
-            {
-                case AlgorithmType.Equihash:
-                case AlgorithmType.ZHash:
-                case AlgorithmType.Beam:
-                    unit = "Sol/s";
-                    break;
-                case AlgorithmType.GrinCuckaroo29:
-                    unit = "G/s";
-                    break;
-                default:
-                    unit = "H/s";
-                    break;
-            }
-
+            var unit = GetUnitForAlgorithmType(algorithmType);        
             return ret + unit;
         }
 
-        public static string GetMotherboardID()
+        public static string GetUnitForAlgorithmType(AlgorithmType algorithmType)
         {
-            var mos = new ManagementObjectSearcher("SELECT * FROM Win32_BaseBoard");
-            var moc = mos.Get();
-            var serial = "";
-            foreach (ManagementObject mo in moc)
+            switch (algorithmType)
             {
-                serial = (string) mo["SerialNumber"];
+                //case AlgorithmType.Equihash:
+                case AlgorithmType.ZHash:
+                case AlgorithmType.Beam:
+                    return "Sol/s";
+                case AlgorithmType.GrinCuckaroo29:
+                case AlgorithmType.GrinCuckatoo31:
+                case AlgorithmType.CuckooCycle:
+                    return "G/s";
+                default:
+                    return "H/s";
             }
-
-            return serial;
         }
 
-        // TODO could have multiple cpus
-        public static string GetCpuID()
+        public static string GetNameFromAlgorithmTypes(params AlgorithmType[] ids)
         {
-            var id = "N/A";
-            try
-            {
-                var mbs = new ManagementObjectSearcher("Select * From Win32_processor");
-                var mbsList = mbs.Get();
-                foreach (ManagementObject mo in mbsList)
-                {
-                    id = mo["ProcessorID"].ToString();
-                }
-            }
-            catch { }
-            return id;
+            var names = ids.Where(id => (int)id > -1).Select(id => Enum.GetName(typeof(AlgorithmType), id));
+            return string.Join("+", names);
         }
 
-        public static bool WebRequestTestGoogle()
+        // TODO disable params for ids
+        public static string FormatDualSpeedOutput(double primarySpeed, double secondarySpeed, params AlgorithmType[] ids)
         {
-            const string url = "http://www.google.com";
-            try
+            if (secondarySpeed > 0 && ids.Length > 0)
             {
-                var myRequest = System.Net.WebRequest.Create(url);
-                myRequest.Timeout = Globals.FirstNetworkCheckTimeoutTimeMs;
-                myRequest.GetResponse();
+                // TODO second uses first
+                return FormatSpeedOutput(primarySpeed, ids[0]) + " + " + FormatSpeedOutput(secondarySpeed, ids[0]);
             }
-            catch (System.Net.WebException)
+            else if (ids.Length > 0)
             {
-                return false;
+                return FormatSpeedOutput(primarySpeed, ids[0]);
             }
-            return true;
+            return "N/A";
         }
 
         // Checking the version using >= will enable forward compatibility, 
@@ -295,121 +234,43 @@ namespace NiceHashMiner
             }
         }
 
-        // IsWMI enabled
-        public static bool IsWmiEnabled()
-        {
-            try
-            {
-                new ManagementObjectSearcher("root\\CIMV2", "SELECT * FROM Win32_OperatingSystem").Get();
-                ConsolePrint("NICEHASH", "WMI service seems to be running, ManagementObjectSearcher returned success.");
-                return true;
-            }
-            catch
-            {
-                ConsolePrint("NICEHASH", "ManagementObjectSearcher not working need WMI service to be running");
-            }
-            return false;
-        }
-
-        public static void InstallVcRedist()
-        {
-            var cudaDevicesDetection = new Process
-            {
-                StartInfo =
-                {
-                    FileName = @"bin\vc_redist.x64.exe",
-                    Arguments = "/q /norestart",
-                    UseShellExecute = false,
-                    RedirectStandardError = false,
-                    RedirectStandardOutput = false,
-                    CreateNoWindow = false
-                }
-            };
-
-            //const int waitTime = 45 * 1000; // 45seconds
-            //CudaDevicesDetection.WaitForExit(waitTime);
-            cudaDevicesDetection.Start();
-        }
-
-        public static void SetDefaultEnvironmentVariables()
-        {
-            ConsolePrint("NICEHASH", "Setting environment variables");
-
-            var envNameValues = new Dictionary<string, string>()
-            {
-                {"GPU_MAX_ALLOC_PERCENT", "100"},
-                {"GPU_USE_SYNC_OBJECTS", "1"},
-                {"GPU_SINGLE_ALLOC_PERCENT", "100"},
-                {"GPU_MAX_HEAP_SIZE", "100"},
-                //{"GPU_FORCE_64BIT_PTR", "1"}  causes problems with lots of miners
-            };
-
-            foreach (var kvp in envNameValues)
-            {
-                var envName = kvp.Key;
-                var envValue = kvp.Value;
-                // Check if all the variables is set
-                if (Environment.GetEnvironmentVariable(envName) == null)
-                {
-                    try { Environment.SetEnvironmentVariable(envName, envValue); }
-                    catch (Exception e) { ConsolePrint("NICEHASH", e.ToString()); }
-                }
-
-                // Check to make sure all the values are set correctly
-                if (!Environment.GetEnvironmentVariable(envName)?.Equals(envValue) ?? false)
-                {
-                    try { Environment.SetEnvironmentVariable(envName, envValue); }
-                    catch (Exception e) { ConsolePrint("NICEHASH", e.ToString()); }
-                }
-            }
-        }
-
         public static void SetNvidiaP0State()
         {
             try
             {
-                var psi = new ProcessStartInfo
+                var startInfo = new ProcessStartInfo
                 {
                     FileName = "nvidiasetp0state.exe",
                     Verb = "runas",
                     UseShellExecute = true,
                     CreateNoWindow = true
                 };
-                var p = Process.Start(psi);
-                p?.WaitForExit();
-                if (p?.ExitCode != 0)
-                    ConsolePrint("NICEHASH", "nvidiasetp0state returned error code: " + p.ExitCode);
-                else
-                    ConsolePrint("NICEHASH", "nvidiasetp0state all OK");
+                using (var p = new Process { StartInfo = startInfo })
+                {
+                    p.Start();
+                    p?.WaitForExit(10*1000);
+                    if (p?.ExitCode != 0)
+                        Logger.Info("NICEHASH", "nvidiasetp0state returned error code: " + p.ExitCode);
+                    else
+                        Logger.Info("NICEHASH", "nvidiasetp0state all OK");
+                }
             }
             catch (Exception ex)
             {
-                ConsolePrint("NICEHASH", "nvidiasetp0state error: " + ex.Message);
+                Logger.Error("NICEHASH", "nvidiasetp0state error: " + ex.Message);
             }
         }
 
-        public static AlgorithmType DualAlgoFromAlgos(AlgorithmType primary, AlgorithmType secondary)
+        public static void VisitUrlLink(string urlLink)
         {
-            if (primary == AlgorithmType.DaggerHashimoto)
+            try
             {
-                switch (secondary)
-                {
-                    case AlgorithmType.Decred:
-                        return AlgorithmType.DaggerDecred;
-                    case AlgorithmType.Lbry:
-                        return AlgorithmType.DaggerLbry;
-                    case AlgorithmType.Pascal:
-                        return AlgorithmType.DaggerPascal;
-                    case AlgorithmType.Sia:
-                        return AlgorithmType.DaggerSia;
-                    case AlgorithmType.Blake2s:
-                        return AlgorithmType.DaggerBlake2s;
-                    case AlgorithmType.Keccak:
-                        return AlgorithmType.DaggerKeccak;
-                }
+                using (var p = Process.Start(urlLink)) {}
             }
-
-            return primary;
+            catch (Exception ex)
+            {
+                Logger.Error("NICEHASH", "VisitLink error: " + ex.Message);
+            }
         }
     }
 }

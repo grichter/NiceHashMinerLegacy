@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using NiceHashMiner.Algorithms;
 using NiceHashMinerLegacy.Common.Enums;
+using NiceHashMinerLegacy.Common;
 
 namespace NiceHashMiner.Miners.Grouping
 {
@@ -25,15 +26,15 @@ namespace NiceHashMiner.Miners.Grouping
                 // C# is null happy
                 status = DeviceMiningStatus.DeviceNull;
             }
-            else if (device.Enabled == false)
+            else if (device.IsDisabled)
             {
                 status = DeviceMiningStatus.Disabled;
             }
             else
             {
-                var hasEnabledAlgo = device.GetAlgorithmSettings().Aggregate(false,
+                var hasEnabledAlgo = device.AlgorithmSettings.Aggregate(false,
                     (current, algo) =>
-                        current | (IsAlgoMiningCapable(algo) && MinerPaths.IsValidMinerPath(algo.MinerBinaryPath)));
+                        current | (IsAlgoMiningCapable(algo) || algo is PluginAlgorithm));
                 if (hasEnabledAlgo == false)
                 {
                     status = DeviceMiningStatus.NoEnabledAlgorithms;
@@ -44,7 +45,7 @@ namespace NiceHashMiner.Miners.Grouping
         }
 
         private static Tuple<List<MiningDevice>, List<Tuple<ComputeDevice, DeviceMiningStatus>>>
-            GetMiningAndNonMiningDevices(List<ComputeDevice> devices)
+            GetMiningAndNonMiningDevices(IEnumerable<ComputeDevice> devices)
         {
             var nonMiningDevStatuses = new List<Tuple<ComputeDevice, DeviceMiningStatus>>();
             var miningDevices = new List<MiningDevice>();
@@ -96,7 +97,7 @@ namespace NiceHashMiner.Miners.Grouping
                     stringBuilder.AppendLine("\t" + GetDisabledDeviceStatusString(deviceStatus));
                 }
 
-                Helpers.ConsolePrint(Tag, stringBuilder.ToString());
+                Logger.Info(Tag, stringBuilder.ToString());
             }
 
             if (enabledDevices.Count > 0)
@@ -109,19 +110,19 @@ namespace NiceHashMiner.Miners.Grouping
                 {
                     var device = miningDevice.Device;
                     stringBuilder.AppendLine($"\tENABLED ({device.GetFullName()})");
-                    foreach (var algo in device.GetAlgorithmSettings())
+                    foreach (var algo in device.AlgorithmSettings)
                     {
-                        var isEnabled = IsAlgoMiningCapable(algo) && MinerPaths.IsValidMinerPath(algo.MinerBinaryPath);
+                        var isEnabled = IsAlgoMiningCapable(algo);
                         stringBuilder.AppendLine(
                             $"\t\tALGORITHM {(isEnabled ? "ENABLED " : "DISABLED")} ({algo.AlgorithmStringID})");
                     }
                 }
 
-                Helpers.ConsolePrint(Tag, stringBuilder.ToString());
+                Logger.Info(Tag, stringBuilder.ToString());
             }
         }
 
-        public static List<MiningDevice> GetMiningDevices(List<ComputeDevice> devices, bool log)
+        public static List<MiningDevice> GetMiningDevices(IEnumerable<ComputeDevice> devices, bool log)
         {
             var miningNonMiningDevs = GetMiningAndNonMiningDevices(devices);
             if (log)
@@ -175,9 +176,9 @@ namespace NiceHashMiner.Miners.Grouping
                             if (index > -1)
                             {
                                 miningDevs[minerDevIndex].Algorithms[index].AvaragedSpeed = avaragedSpeed;
-                                if (miningDevs[minerDevIndex].Algorithms[index] is DualAlgorithm dualAlgo)
+                                if (miningDevs[minerDevIndex].Algorithms[index].IsDual)
                                 {
-                                    dualAlgo.SecondaryAveragedSpeed = secondaryAveragedSpeed;
+                                    miningDevs[minerDevIndex].Algorithms[index].SecondaryAveragedSpeed = secondaryAveragedSpeed;
                                 }
                             }
                         }
@@ -187,7 +188,7 @@ namespace NiceHashMiner.Miners.Grouping
         }
     }
 
-    public class SpeedSumCount
+    internal class SpeedSumCount
     {
         public double Speed = 0;
         public double SecondarySpeed = 0;
@@ -212,7 +213,7 @@ namespace NiceHashMiner.Miners.Grouping
         }
     }
 
-    public class AveragerGroup
+    internal class AveragerGroup
     {
         public string DeviceName;
 
@@ -243,9 +244,9 @@ namespace NiceHashMiner.Miners.Grouping
             {
                 var algoID = algo.AlgorithmStringID;
                 double secondarySpeed = 0;
-                if (algo is DualAlgorithm dualAlgo)
+                if (algo.IsDual)
                 {
-                    secondarySpeed = dualAlgo.SecondaryBenchmarkSpeed;
+                    secondarySpeed = algo.SecondaryBenchmarkSpeed;
                 }
                 if (BenchmarkSums.ContainsKey(algoID) == false)
                 {

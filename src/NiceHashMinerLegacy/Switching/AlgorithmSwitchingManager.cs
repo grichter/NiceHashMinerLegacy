@@ -2,8 +2,10 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Linq;
 using System.Timers;
 using NiceHashMinerLegacy.Common.Enums;
+using NiceHashMinerLegacy.Common;
 
 namespace NiceHashMiner.Switching
 {
@@ -24,7 +26,7 @@ namespace NiceHashMiner.Switching
 
         private int _ticksForStable;
         private int _ticksForUnstable;
-        private double _smaCheckTime;
+        private double _smaCheckTime = 1;
 
         // Simplify accessing config objects
         public static Interval StableRange => ConfigManager.GeneralConfig.SwitchSmaTicksStable;
@@ -63,7 +65,7 @@ namespace NiceHashMiner.Switching
 
         public void Start()
         {
-            _smaCheckTimer = new Timer(100);
+            _smaCheckTimer = new Timer(_smaCheckTime * 1000);
             _smaCheckTimer.Elapsed += SmaCheckTimerOnElapsed;
 
             _smaCheckTimer.Start();
@@ -71,8 +73,30 @@ namespace NiceHashMiner.Switching
 
         public void Stop()
         {
-            _smaCheckTimer.Stop();
+            _smaCheckTimer?.Stop();
             _smaCheckTimer = null;
+        }
+
+        public void ForceUpdate()
+        {
+            var isAllZeroPaying = _lastLegitPaying.Values.Any(paying => paying == 0);
+            if (isAllZeroPaying)
+            {
+                foreach (var kvp in NHSmaData.FilteredCurrentProfits(true))
+                {
+                    _stableHistory[kvp.Key] = new AlgorithmHistory(MaxHistory);
+                    _lastLegitPaying[kvp.Key] = kvp.Value;
+                }
+                foreach (var kvp in NHSmaData.FilteredCurrentProfits(false))
+                {
+                    _unstableHistory[kvp.Key] = new AlgorithmHistory(MaxHistory);
+                    _lastLegitPaying[kvp.Key] = kvp.Value;
+                }
+            }
+            var args = new SmaUpdateEventArgs(_lastLegitPaying);
+            Stop();
+            SmaCheck?.Invoke(this, args);
+            Start();
         }
 
         /// <summary>
@@ -103,7 +127,7 @@ namespace NiceHashMiner.Switching
 
             if (_hasStarted)
             {
-                Helpers.ConsolePrint(Tag, sb.ToString());
+                Logger.Info(Tag, sb.ToString());
             }
             else
             {

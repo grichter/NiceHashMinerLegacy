@@ -1,116 +1,36 @@
-﻿using NiceHashMiner.Algorithms;
+﻿using MinerPlugin;
+using NiceHashMiner.Algorithms;
 using NiceHashMiner.Devices;
-using NiceHashMiner.Miners.Equihash;
+using NiceHashMiner.Plugin;
 using NiceHashMinerLegacy.Common.Enums;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace NiceHashMiner.Miners
 {
     public static class MinerFactory
     {
-        private static Miner CreateEthminer(DeviceType deviceType)
+        // For benchmark
+        public static Miner CreateMinerForBenchmark(Algorithm algorithm)
         {
-            if (DeviceType.AMD == deviceType)
+            if (algorithm is PluginAlgorithm pAlgo)
             {
-                return new MinerEtherumOCL();
+                return new MinerFromPlugin(pAlgo.BaseAlgo.MinerID, null, "");
             }
-
-            return DeviceType.NVIDIA == deviceType ? new MinerEtherumCUDA() : null;
-        }
-
-        private static Miner CreateClaymore(Algorithm algorithm)
-        {
-            switch (algorithm.NiceHashID)
-            {
-                case AlgorithmType.Equihash:
-                    return new ClaymoreZcashMiner();
-                case AlgorithmType.CryptoNightV7:
-                    return new ClaymoreCryptoNightMiner();
-                case AlgorithmType.DaggerHashimoto:
-                    return new ClaymoreDual(algorithm.SecondaryNiceHashID);
-            }
-
             return null;
         }
 
-        private static Miner CreateExperimental(DeviceType deviceType, AlgorithmType algorithmType)
+        // For mining
+        public static Miner CreateMinerForMining(List<MiningPair> miningPairs, string groupKey)
         {
-            if (AlgorithmType.NeoScrypt == algorithmType && DeviceType.NVIDIA == deviceType)
+            var pair = miningPairs.FirstOrDefault();
+            if (pair == null || pair.Algorithm == null) return null;
+            var algorithm = pair.Algorithm;
+            var plugin = MinerPluginsManager.GetPluginWithUuid(algorithm.MinerID);
+            if (plugin != null)
             {
-                return new Ccminer();
+                return new MinerFromPlugin(algorithm.MinerID, miningPairs, groupKey);
             }
-
-            return null;
-        }
-
-        private static Miner CreateEwbf(AlgorithmType type)
-        {
-            if (type == AlgorithmType.Equihash)
-            {
-                return new Ewbf();
-            }
-            if (type == AlgorithmType.ZHash)
-            {
-                return new Ewbf144();
-            }
-
-            return null;
-        }
-
-        public static Miner CreateMiner(DeviceType deviceType, Algorithm algorithm)
-        {
-            switch (algorithm.MinerBaseType)
-            {
-                case MinerBaseType.ccminer:
-                    return new Ccminer();
-                case MinerBaseType.sgminer:
-                    return new Sgminer();
-                case MinerBaseType.nheqminer:
-                    return new NhEqMiner();
-                case MinerBaseType.ethminer:
-                    return CreateEthminer(deviceType);
-                case MinerBaseType.Claymore:
-                    return CreateClaymore(algorithm);
-                case MinerBaseType.OptiminerAMD:
-                    return new OptiminerZcashMiner();
-                //case MinerBaseType.excavator:
-                //    return new Excavator();
-                case MinerBaseType.XmrStak:
-                    return new XmrStak.XmrStak();
-                case MinerBaseType.ccminer_alexis:
-                    return new Ccminer();
-                case MinerBaseType.experimental:
-                    return CreateExperimental(deviceType, algorithm.NiceHashID);
-                case MinerBaseType.EWBF:
-                    return CreateEwbf(algorithm.NiceHashID);
-                case MinerBaseType.Prospector:
-                    return new Prospector();
-                case MinerBaseType.Xmrig:
-                    return new Xmrig();
-                case MinerBaseType.dtsm:
-                    return new Dtsm();
-                case MinerBaseType.cpuminer:
-                    return new CpuMiner();
-                case MinerBaseType.trex:
-                    return new Trex();
-                case MinerBaseType.Phoenix:
-                    return new Phoenix();
-                case MinerBaseType.GMiner:
-                    return new GMiner();
-                case MinerBaseType.BMiner:
-                    return new BMiner(algorithm.NiceHashID);
-            }
-
-            return null;
-        }
-
-        // create miner creates new miners based on device type and algorithm/miner path
-        public static Miner CreateMiner(ComputeDevice device, Algorithm algorithm)
-        {
-            if (device != null && algorithm != null)
-            {
-                return CreateMiner(device.DeviceType, algorithm);
-            }
-
             return null;
         }
     }

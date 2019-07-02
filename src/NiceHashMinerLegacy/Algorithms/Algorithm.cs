@@ -1,4 +1,4 @@
-﻿using System;
+﻿using System.Linq;
 using System.Collections.Generic;
 using NiceHashMiner.Stats;
 using NiceHashMiner.Switching;
@@ -6,7 +6,7 @@ using NiceHashMinerLegacy.Common.Enums;
 
 namespace NiceHashMiner.Algorithms
 {
-    public class Algorithm
+    public abstract class Algorithm
     {
         /// <summary>
         /// Used for converting SMA values to BTC/H/Day
@@ -18,60 +18,53 @@ namespace NiceHashMiner.Algorithms
         /// <summary>
         /// Friendly display name for this algorithm
         /// </summary>
-        public string AlgorithmName { get; protected set; }
+        public abstract string AlgorithmName { get; }
         /// <summary>
         /// Friendly name for miner type
         /// </summary>
-        public readonly string MinerBaseTypeName;
+        public abstract string MinerBaseTypeName { get; }
         /// <summary>
         /// Friendly name for this algorithm/miner combo
         /// </summary>
-        public string AlgorithmStringID { get; protected set; }
+        public abstract string AlgorithmStringID { get; }
         /// <summary>
         /// AlgorithmType used by this Algorithm
         /// </summary>
-        public readonly AlgorithmType NiceHashID;
-        /// <summary>
-        /// MinerBaseType used by this algorithm
-        /// </summary>
-        public readonly MinerBaseType MinerBaseType;
-        /// <summary>
-        /// Used for miner ALGO flag parameter
-        /// </summary>
-        public readonly string MinerName;
+        public abstract AlgorithmType[] IDs { get; }
 
+        public abstract string MinerUUID { get; }
+        public abstract bool IsDual { get; }
         #endregion
+
 
         #region Mining settings
 
         /// <summary>
         /// Hashrate in H/s set by benchmark or user
         /// </summary>
-        public virtual double BenchmarkSpeed { get; set; }
+        public abstract double BenchmarkSpeed { get; set; }
+        public abstract double SecondaryBenchmarkSpeed { get; set; }
+
+        public abstract List<double> Speeds { get; set; }
+
         /// <summary>
         /// Gets the averaged speed for this algorithm in H/s
         /// <para>When multiple devices of the same model are used, this will be set to their averaged hashrate</para>
         /// </summary>
         public double AvaragedSpeed { get; set; }
 
+        public double SecondaryAveragedSpeed { get; set; }
+
         /// <summary>
         /// String containing raw extralaunchparams entered by user
         /// </summary>
-        public string ExtraLaunchParameters { get; set; }
+        public virtual string ExtraLaunchParameters { get; set; }
 
         /// <summary>
         /// Get or set whether this algorithm is enabled for mining
         /// </summary>
-        public bool Enabled { get; set; }
-
-        // TODO not needed with new xmr-stak?
-        public int LessThreads { get; set; }
-
-        /// <summary>
-        /// Path to the miner executable
-        /// <para>Path may differ for the same miner/algo combos depending on devices and user settings</para>
-        /// </summary>
-        public string MinerBinaryPath = "";
+        public virtual bool Enabled { get; set; }
+        
         /// <summary>
         /// Indicates whether this algorithm requires a benchmark
         /// </summary>
@@ -89,7 +82,8 @@ namespace NiceHashMiner.Algorithms
         /// Current SMA profitability for this algorithm type in BTC/GH/Day
         /// </summary>
         public double CurNhmSmaDataVal { get; private set; }
-        
+        public double SecondaryCurNhmSmaDataVal { get; private set; }
+
         /// <summary>
         /// Power consumption of this algorithm, in Watts
         /// </summary>
@@ -97,30 +91,7 @@ namespace NiceHashMiner.Algorithms
 
         #endregion
 
-        #region Dual stubs
-        
-        // Useful placeholders for finding/sorting
-        public virtual AlgorithmType SecondaryNiceHashID => AlgorithmType.NONE;
-        public virtual AlgorithmType DualNiceHashID => NiceHashID;
-
-        #endregion
-
-        public Algorithm(MinerBaseType minerBaseType, AlgorithmType niceHashID, string minerName = "", bool enabled = true) 
-        {
-            NiceHashID = niceHashID;
-
-            AlgorithmName = AlgorithmNiceHashNames.GetName(NiceHashID);
-            MinerBaseTypeName = Enum.GetName(typeof(MinerBaseType), minerBaseType);
-            AlgorithmStringID = MinerBaseTypeName + "_" + AlgorithmName;
-
-            MinerBaseType = minerBaseType;
-            MinerName = minerName;
-            
-            ExtraLaunchParameters = "";
-            LessThreads = 0;
-            Enabled = enabled;
-            BenchmarkStatus = "";
-        }
+        public bool IsReBenchmark { get; set; } = false;
 
         #region Benchmark info
 
@@ -128,30 +99,64 @@ namespace NiceHashMiner.Algorithms
 
         public bool IsBenchmarkPending { get; private set; }
 
+        public void ClearSpeeds()
+        {
+            var allZero = this.Speeds.Select(v => 0d).ToList();
+            this.Speeds = allZero;
+        }
+
         public string CurPayingRatio
         {
             get
             {
-                var ratio = International.GetText("BenchmarkRatioRateN_A");
-                if (NHSmaData.TryGetPaying(NiceHashID, out var paying))
+                var payingRatios = new List<double>();
+                for (int i = 0; i < IDs.Count(); i++)
                 {
-                    ratio = paying.ToString("F8");
+                    var id = IDs[i];
+                    if (NHSmaData.TryGetPaying(id, out var paying) == false) continue;
+                    payingRatios.Add(paying);
                 }
-                return ratio;
+                if (payingRatios.Count > 0)
+                {
+                    return string.Join("+", payingRatios);
+                }
+                return Translations.Tr("N/A");
             }
         }
 
-        public virtual string CurPayingRate
+        public double CurPayingRate
         {
             get
             {
-                var rate = International.GetText("BenchmarkRatioRateN_A");
-                if (BenchmarkSpeed > 0 && NHSmaData.TryGetPaying(NiceHashID, out var paying))
+                var payingRate = 0d;
+                for (int i = 0; i < IDs.Count(); i++)
                 {
-                    var payingRate = BenchmarkSpeed * paying * Mult;
-                    rate = payingRate.ToString("F8");
+                    var id = IDs[i];
+                    if (NHSmaData.TryGetPaying(id, out var paying) == false) continue;
+                    var speed = Speeds[i];
+                    payingRate += speed * paying * Mult;
                 }
-                return rate;
+                return payingRate;
+            }
+        }
+
+        public string CurPayingRateStr
+        {
+            get
+            {
+                var payingRate = 0d;
+                for (int i = 0; i < IDs.Count(); i++)
+                {
+                    var id = IDs[i];
+                    if (NHSmaData.TryGetPaying(id, out var paying) == false) continue;
+                    var speed = Speeds[i];
+                    payingRate += speed * paying * Mult;
+                }
+                if (payingRate > 0)
+                {
+                    return payingRate.ToString("F8");
+                }
+                return Translations.Tr("N/A"); ;
             }
         }
 
@@ -162,7 +167,7 @@ namespace NiceHashMiner.Algorithms
         public void SetBenchmarkPending()
         {
             IsBenchmarkPending = true;
-            BenchmarkStatus = International.GetText("Algorithm_Waiting_Benchmark");
+            BenchmarkStatus = Translations.Tr("Waiting benchmark");
         }
 
         public void SetBenchmarkPendingNoMsg()
@@ -172,7 +177,7 @@ namespace NiceHashMiner.Algorithms
 
         private bool IsPendingString()
         {
-            return BenchmarkStatus == International.GetText("Algorithm_Waiting_Benchmark")
+            return BenchmarkStatus == Translations.Tr("Waiting benchmark")
                    || BenchmarkStatus == "."
                    || BenchmarkStatus == ".."
                    || BenchmarkStatus == "...";
@@ -201,24 +206,41 @@ namespace NiceHashMiner.Algorithms
             }
             if (BenchmarkSpeed > 0)
             {
-                return Helpers.FormatDualSpeedOutput(BenchmarkSpeed, 0, NiceHashID);
+                return Helpers.FormatDualSpeedOutput(BenchmarkSpeed, SecondaryBenchmarkSpeed, IDs);
             }
             if (!IsPendingString() && !string.IsNullOrEmpty(BenchmarkStatus))
             {
                 return BenchmarkStatus;
             }
-            return International.GetText("BenchmarkSpeedStringNone");
+            return Translations.Tr("none");
         }
 
         #endregion
-        
+
         #region Profitability methods
 
         public virtual void UpdateCurProfit(Dictionary<AlgorithmType, double> profits)
         {
-            profits.TryGetValue(NiceHashID, out var paying);
-            CurNhmSmaDataVal = paying;
-            CurrentProfit = CurNhmSmaDataVal * AvaragedSpeed * Mult;
+            var newProfit = 0d;
+            for (int i = 0; i < IDs.Length; i++)
+            {
+                var id = IDs[i];
+                if (profits.TryGetValue(id, out var paying) == false) continue;
+                if (i == 0)
+                {
+                    CurNhmSmaDataVal = paying;
+                    newProfit += CurNhmSmaDataVal * AvaragedSpeed * Mult;
+                }
+                else if(i == 1)
+                {
+                    SecondaryCurNhmSmaDataVal = paying;
+                    newProfit += SecondaryCurNhmSmaDataVal * SecondaryAveragedSpeed * Mult;
+                }
+            }
+            CurrentProfit = newProfit;
+            //profits.TryGetValue(NiceHashID, out var paying);
+            //CurNhmSmaDataVal = paying;
+            //CurrentProfit = CurNhmSmaDataVal * AvaragedSpeed * Mult;
             SubtractPowerFromProfit();
         }
 
