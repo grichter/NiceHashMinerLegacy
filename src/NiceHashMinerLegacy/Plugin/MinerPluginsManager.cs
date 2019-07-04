@@ -71,7 +71,8 @@ namespace NiceHashMiner.Plugin
                 // plugin dependencies
                 VC_REDIST_x64_2015_DEPENDENCY_PLUGIN.Instance
             };
-            foreach (var integratedPlugin in integratedPlugins)
+            var filteredIntegratedPlugins = integratedPlugins.Where(p => SupportedPluginsFilter.IsSupported(p.PluginUUID)).ToList();
+            foreach (var integratedPlugin in filteredIntegratedPlugins)
             {
                 PluginContainer.Create(integratedPlugin);
             }
