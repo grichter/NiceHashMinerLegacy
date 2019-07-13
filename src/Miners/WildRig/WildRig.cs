@@ -2,16 +2,16 @@
 using MinerPluginToolkitV1;
 using MinerPluginToolkitV1.ExtraLaunchParameters;
 using Newtonsoft.Json;
-using NiceHashMinerLegacy.Common;
-using NiceHashMinerLegacy.Common.Enums;
+using NHM.Common;
+using NHM.Common.Enums;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using MinerPluginToolkitV1.Configs;
 
 namespace WildRig
 {
@@ -99,8 +99,8 @@ namespace WildRig
 
         public async override Task<BenchmarkResult> StartBenchmark(CancellationToken stop, BenchmarkPerformanceType benchmarkType = BenchmarkPerformanceType.Standard)
         {
-            //only 60s mark is available
-            var benchmarkTime = 60; // in seconds
+            var benchmarkTime = MinerBenchmarkTimeSettings.ParseBenchmarkTime(new List<int> { 60, 60, 120 }, MinerBenchmarkTimeSettings, _miningPairs, benchmarkType); // in seconds
+
             var commandLine = $"-a {AlgoName} --benchmark -d {_devices} --multiple-instance {_extraLaunchParameters}";
             var binPathBinCwdPair = GetBinAndCwdPaths();
             var binPath = binPathBinCwdPair.Item1;
@@ -112,15 +112,21 @@ namespace WildRig
 
             bp.CheckData = (string data) =>
             {
-
+                if (!data.Contains("hashrate:"))
+                {
+                    return new BenchmarkResult { AlgorithmTypeSpeeds = new List<AlgorithmTypeSpeedPair> { new AlgorithmTypeSpeedPair(_algorithmType, 0d) }, Success = false };
+                }
                 var hashrateFoundPair = BenchmarkHelpers.TryGetHashrateAfter(data, "60s:");
                 var hashrate = hashrateFoundPair.Item1;
+
+                // TODO temporary fix for N/A speeds at 60s mark... will be fixed when developer fixes benchmarking
+                if (hashrate == 0) hashrateFoundPair = BenchmarkHelpers.TryGetHashrateAfter(data, "10s:");
+                hashrate = hashrateFoundPair.Item1;
                 var found = hashrateFoundPair.Item2;
 
-                if (found)
-                {
-                    benchHashResult = hashrate * (1 - DevFee * 0.01);
-                }
+                if (!found) return new BenchmarkResult { AlgorithmTypeSpeeds = new List<AlgorithmTypeSpeedPair> { new AlgorithmTypeSpeedPair(_algorithmType, benchHashResult) }, Success = false };
+
+                benchHashResult = hashrate * (1 - DevFee * 0.01);
 
                 return new BenchmarkResult
                 {
@@ -152,9 +158,9 @@ namespace WildRig
             _devices = string.Join(",", _miningPairs.Select(p => _mappedIDs[p.Device.UUID]));
             if (MinerOptionsPackage != null)
             {
-                // TODO add ignore temperature checks
-                var generalParams = Parser.Parse(orderedMiningPairs, MinerOptionsPackage.GeneralOptions);
-                var temperatureParams = Parser.Parse(orderedMiningPairs, MinerOptionsPackage.TemperatureOptions);
+                var ignoreDefaults = MinerOptionsPackage.IgnoreDefaultValueOptions;
+                var generalParams = ExtraLaunchParametersParser.Parse(orderedMiningPairs, MinerOptionsPackage.GeneralOptions, ignoreDefaults);
+                var temperatureParams = ExtraLaunchParametersParser.Parse(orderedMiningPairs, MinerOptionsPackage.TemperatureOptions, ignoreDefaults);
                 _extraLaunchParameters = $"{generalParams} {temperatureParams}".Trim();
             }
         }

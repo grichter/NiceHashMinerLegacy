@@ -1,7 +1,7 @@
 ﻿using ManagedCuda.Nvml;
 using NHM.DeviceMonitoring.NVIDIA;
-using NiceHashMinerLegacy.Common;
-using NiceHashMinerLegacy.Common.Enums;
+using NHM.Common;
+using NHM.Common.Enums;
 using NVIDIA.NVAPI;
 using System;
 using System.Collections.Generic;
@@ -86,7 +86,6 @@ namespace NHM.DeviceMonitoring
                 {
                     PowerLevel = PowerLevel.Disabled;
                 }
-                
             }
             catch (Exception e)
             {

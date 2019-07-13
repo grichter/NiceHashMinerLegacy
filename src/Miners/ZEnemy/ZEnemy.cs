@@ -8,10 +8,11 @@ using MinerPlugin;
 using MinerPluginToolkitV1;
 using MinerPluginToolkitV1.CCMinerCommon;
 using MinerPluginToolkitV1.ExtraLaunchParameters;
-using NiceHashMinerLegacy.Common.Enums;
-using static NiceHashMinerLegacy.Common.StratumServiceHelpers;
+using NHM.Common.Enums;
+using static NHM.Common.StratumServiceHelpers;
 using System.IO;
-using NiceHashMinerLegacy.Common;
+using NHM.Common;
+using MinerPluginToolkitV1.Configs;
 
 namespace ZEnemy
 {
@@ -54,27 +55,12 @@ namespace ZEnemy
         {
             // determine benchmark time 
             // settup times
-            var benchmarkTime = 60;
-            switch (benchmarkType)
-            {
-                case BenchmarkPerformanceType.Quick:
-                    benchmarkTime = 40;
-                    break;
-                case BenchmarkPerformanceType.Standard:
-                    benchmarkTime = 60;
-                    break;
-                case BenchmarkPerformanceType.Precise:
-                    benchmarkTime = 120;
-                    break;
-            }
+            var benchmarkTime = MinerBenchmarkTimeSettings.ParseBenchmarkTime(new List<int> { 40, 60, 120 }, MinerBenchmarkTimeSettings, _miningPairs, benchmarkType); // in seconds
 
             var urlWithPort = GetLocationUrl(_algorithmType, _miningLocation, NhmConectionType.STRATUM_TCP);
-            var split = urlWithPort.Split(':');
-            var url = split[1].Substring(2, split[1].Length - 2);
-            var port = split[2];
             var algo = AlgorithmName(_algorithmType);
 
-            var commandLine = $"--algo {algo} --url={url}:{port} --user {MinerToolkit.DemoUserBTC} --devices {_devices} {_extraLaunchParameters}";
+            var commandLine = $"--algo {algo} --url={urlWithPort} --user {MinerToolkit.DemoUserBTC} --devices {_devices} {_extraLaunchParameters}";
             var binPathBinCwdPair = GetBinAndCwdPaths();
             var binPath = binPathBinCwdPair.Item1;
             var binCwd = binPathBinCwdPair.Item2;
@@ -142,9 +128,9 @@ namespace ZEnemy
             _devices = string.Join(",", orderedMiningPairs.Select(p => p.Device.ID));
             if (MinerOptionsPackage != null)
             {
-                // TODO add ignore temperature checks
-                var generalParams = Parser.Parse(orderedMiningPairs, MinerOptionsPackage.GeneralOptions);
-                var temperatureParams = Parser.Parse(orderedMiningPairs, MinerOptionsPackage.TemperatureOptions);
+                var ignoreDefaults = MinerOptionsPackage.IgnoreDefaultValueOptions;
+                var generalParams = ExtraLaunchParametersParser.Parse(orderedMiningPairs, MinerOptionsPackage.GeneralOptions, ignoreDefaults);
+                var temperatureParams = ExtraLaunchParametersParser.Parse(orderedMiningPairs, MinerOptionsPackage.TemperatureOptions, ignoreDefaults);
                 _extraLaunchParameters = $"{generalParams} {temperatureParams}".Trim();
             }
         }
@@ -155,13 +141,10 @@ namespace ZEnemy
             _apiPort = GetAvaliablePort();
             // instant non blocking
             var urlWithPort = GetLocationUrl(_algorithmType, _miningLocation, NhmConectionType.STRATUM_TCP);
-            var split = urlWithPort.Split(':');
-            var url = split[1].Substring(2, split[1].Length - 2);
-            var port = split[2];
 
             var algo = AlgorithmName(_algorithmType);
 
-            var commandLine = $"--algo {algo} --url={url}:{port} --user {_username} --api-bind={_apiPort} --devices {_devices} {_extraLaunchParameters}";
+            var commandLine = $"--algo {algo} --url={urlWithPort} --user {_username} --api-bind={_apiPort} --devices {_devices} {_extraLaunchParameters}";
             return commandLine;
         }
     }

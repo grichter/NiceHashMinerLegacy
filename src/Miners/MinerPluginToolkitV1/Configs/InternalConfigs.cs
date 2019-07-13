@@ -1,7 +1,7 @@
 ﻿using MinerPluginToolkitV1.ExtraLaunchParameters;
 using MinerPluginToolkitV1.Interfaces;
 using Newtonsoft.Json;
-using NiceHashMinerLegacy.Common;
+using NHM.Common;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -147,6 +147,12 @@ namespace MinerPluginToolkitV1.Configs
         public static MinerApiMaxTimeoutSetting InitMinerApiMaxTimeoutSetting(string pluginRoot, MinerApiMaxTimeoutSetting minerApiMaxTimeoutSetting)
         {
             return InitInternalSetting(pluginRoot, minerApiMaxTimeoutSetting, "MinerApiMaxTimeoutSetting.json");
+        }
+
+        // TODO document
+        public static MinerBenchmarkTimeSettings InitMinerBenchmarkTimeSettings(string pluginRoot, MinerBenchmarkTimeSettings minerBenchmarkTimeSettings)
+        {
+            return InitInternalSetting(pluginRoot, minerBenchmarkTimeSettings, "MinerBenchmarkTimeSettings.json");
         }
 
         public static T InitInternalSetting<T>(string pluginRoot, T setting, string settingName) where T : class, IInternalSetting
