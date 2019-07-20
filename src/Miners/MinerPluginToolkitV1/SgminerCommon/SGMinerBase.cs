@@ -1,8 +1,5 @@
 ﻿using MinerPlugin;
-using MinerPluginToolkitV1;
-using MinerPluginToolkitV1.Interfaces;
 using MinerPluginToolkitV1.ExtraLaunchParameters;
-using Newtonsoft.Json;
 using NHM.Common.Enums;
 using System;
 using System.Linq;
@@ -19,13 +16,8 @@ namespace MinerPluginToolkitV1.SgminerCommon
     public class SGMinerBase : MinerBase
     {
         private int _apiPort;
-        
-        // can mine only one algorithm at a given time
-        protected AlgorithmType _algorithmType;
-
         // command line parts
         private string _devicesOnPlatform;
-        private string _extraLaunchParameters;
 
         public SGMinerBase(string uuid) : base(uuid)
         {}
@@ -60,14 +52,6 @@ namespace MinerPluginToolkitV1.SgminerCommon
 
         protected override void Init()
         {
-            var singleType = MinerToolkit.GetAlgorithmSingleType(_miningPairs);
-            _algorithmType = singleType.Item1;
-            bool ok = singleType.Item2;
-            if (!ok)
-            {
-                Logger.Error(_logGroup, "Initialization of miner failed. Algorithm not found!");
-                throw new InvalidOperationException("Invalid mining initialization");
-            }
             // check platform id
             var openClAmdPlatformResult = MinerToolkit.GetOpenCLPlatformID(_miningPairs);
             var openClAmdPlatformNum = openClAmdPlatformResult.Item1;
@@ -77,28 +61,20 @@ namespace MinerPluginToolkitV1.SgminerCommon
                 Logger.Error(_logGroup, "Initialization of miner failed. Multiple OpenCLPlatform IDs found!");
                 throw new InvalidOperationException("Invalid mining initialization");
             }
-
             // all good continue on
 
             // Order pairs and parse ELP
-            var orderedMiningPairs = _miningPairs.ToList();
-            orderedMiningPairs.Sort((a, b) => a.Device.ID.CompareTo(b.Device.ID));
-            var deviceIds = orderedMiningPairs.Select(pair => pair.Device.ID);
+            var miningPairsList = _miningPairs.ToList();
+            var deviceIds = miningPairsList.Select(pair => pair.Device.ID);
             _devicesOnPlatform = $"--gpu-platform {openClAmdPlatformNum} -d {string.Join(",", deviceIds)}";
 
 
-            if (MinerOptionsPackage != null)
+            // if no MinerOptionsPackage fallback to defaults
+            if (MinerOptionsPackage == null)
             {
-                var ignoreDefaults = MinerOptionsPackage.IgnoreDefaultValueOptions;
-                var generalParams = ExtraLaunchParametersParser.Parse(orderedMiningPairs, MinerOptionsPackage.GeneralOptions, ignoreDefaults);
-                var temperatureParams = ExtraLaunchParametersParser.Parse(orderedMiningPairs, MinerOptionsPackage.TemperatureOptions, ignoreDefaults);
-                _extraLaunchParameters = $"{generalParams} {temperatureParams}".Trim();
-            }
-            else // TODO this one is temp???
-            {
-                var ignoreDefaults = DefaultMinerOptionsPackage.IgnoreDefaultValueOptions;
-                var generalParams = ExtraLaunchParametersParser.Parse(orderedMiningPairs, DefaultMinerOptionsPackage.GeneralOptions, ignoreDefaults);
-                var temperatureParams = ExtraLaunchParametersParser.Parse(orderedMiningPairs, DefaultMinerOptionsPackage.TemperatureOptions, ignoreDefaults);
+                var ignoreDefaults = SgminerOptionsPackage.DefaultMinerOptionsPackage.IgnoreDefaultValueOptions;
+                var generalParams = ExtraLaunchParametersParser.Parse(miningPairsList, SgminerOptionsPackage.DefaultMinerOptionsPackage.GeneralOptions, ignoreDefaults);
+                var temperatureParams = ExtraLaunchParametersParser.Parse(miningPairsList, SgminerOptionsPackage.DefaultMinerOptionsPackage.TemperatureOptions, ignoreDefaults);
                 _extraLaunchParameters = $"{generalParams} {temperatureParams}".Trim();
             }
         }
@@ -169,164 +145,5 @@ namespace MinerPluginToolkitV1.SgminerCommon
             _apiPort = GetAvaliablePort();
             return CreateCommandLine(_username) + $" --api-listen --api-port={_apiPort}";
         }
-
-
-        // TODO remove redundant/duplicated long/short names after ELP parser is fixed
-        public static readonly MinerOptionsPackage DefaultMinerOptionsPackage = new MinerOptionsPackage
-        {
-            GeneralOptions = new List<MinerOption>
-            {
-                // Single Param
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithSingleParameter,
-                    ID = "KeccakUnroll",
-                    ShortName = "--keccak-unroll",
-                    LongName = "--keccak-unroll",
-                    DefaultValue = "0"
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithSingleParameter,
-                    ID = "HamsiExpandBig",
-                    ShortName = "--hamsi-expand-big",
-                    LongName = "--hamsi-expand-big",
-                    DefaultValue = "4"
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithSingleParameter,
-                    ID = "Nfactor",
-                    ShortName = "--nfactor",
-                    LongName = "--nfactor",
-                    DefaultValue = "10"
-                },
-                // Multi Params
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "Intensity",
-                    ShortName = "-I",
-                    LongName = "--intensity",
-                    DefaultValue = "d",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "Xintensity",
-                    ShortName = "-X",
-                    LongName = "--xintensity",
-                    DefaultValue = "-1",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "Rawintensity",
-                    ShortName = "--rawintensity",
-                    LongName = "--rawintensity",
-                    DefaultValue = "-1",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "ThreadConcurrency",
-                    ShortName = "--thread-concurrency",
-                    LongName = "--thread-concurrency",
-                    DefaultValue = "-1",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "Worksize",
-                    ShortName = "-w",
-                    LongName = "--worksize",
-                    DefaultValue = "-1",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "GpuThreads",
-                    ShortName = "-g",
-                    LongName = "--gpu-threads",
-                    DefaultValue = "-1",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "LookupGap",
-                    ShortName = "--lookup-gap",
-                    LongName= "--lookup-gap",
-                    DefaultValue = "-1",
-                    Delimiter = ","
-                },
-                // Only parameter
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionIsParameter,
-                    ID = "RemoveDisabled",
-                    ShortName = "--remove-disabled",
-                    DefaultValue = "--remove-disabled",
-                },
-            },
-            TemperatureOptions = new List<MinerOption>
-            {
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "GpuFan",
-                    ShortName = "--gpu-fan",
-                    LongName = "--gpu-fan",
-                    DefaultValue = "30-60",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "TempCutoff",
-                    ShortName = "--temp-cutoff",
-                    LongName = "--temp-cutoff",
-                    DefaultValue = "95",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "TempOverheat",
-                    ShortName = "--temp-overheat",
-                    LongName = "--temp-overheat",
-                    DefaultValue = "85",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionWithMultipleParameters,
-                    ID = "TempTarget",
-                    ShortName = "--temp-target",
-                    LongName = "--temp-target",
-                    DefaultValue = "75",
-                    Delimiter = ","
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionIsParameter,
-                    ID = "AutoFan",
-                    ShortName = "--auto-fan",
-                    LongName = "--auto-fan",
-                },
-                new MinerOption
-                {
-                    Type = MinerOptionType.OptionIsParameter,
-                    ID = "AutoGpu",
-                    ShortName = "--auto-gpu",
-                    LongName = "--auto-gpu",
-                },
-            }
-        };
     }
 }

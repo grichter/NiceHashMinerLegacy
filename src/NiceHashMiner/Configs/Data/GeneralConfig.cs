@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using NiceHashMiner.Miners;
+using NiceHashMiner.Mining;
 using NiceHashMiner.Switching;
 using NHM.Common.Enums;
 using NiceHashMiner.Utils;
@@ -214,7 +214,7 @@ namespace NiceHashMiner.Configs.Data
         public bool GUIWindowsAlwaysOnTop { get; set; } = false;
 
         public bool DisableDeviceStatusMonitoring { get; set; } = false;
-        public bool DisableDevicePowerModeSettings { get; set; } = false;
+        public bool DisableDevicePowerModeSettings { get; set; } = true;
 
         public bool ShowGPUPCIeBusIDs { get; set; } = false;
 
@@ -264,7 +264,7 @@ namespace NiceHashMiner.Configs.Data
             RunAtStartup = false;
             GUIWindowsAlwaysOnTop = false;
             DisableDeviceStatusMonitoring = false;
-            DisableDevicePowerModeSettings = false;
+            DisableDevicePowerModeSettings = true;
             MineRegardlessOfProfit = true;
         }
 

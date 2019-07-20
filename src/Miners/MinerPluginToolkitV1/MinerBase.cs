@@ -1,7 +1,5 @@
 ﻿using MinerPlugin;
 using NHM.Common.Enums;
-using NHM.Common.Device;
-using NHM.Common.Algorithm;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,7 +10,6 @@ using MinerPluginToolkitV1.ExtraLaunchParameters;
 using MinerPluginToolkitV1.Interfaces;
 using NHM.Common;
 using System.Diagnostics;
-using System.ComponentModel;
 
 namespace MinerPluginToolkitV1
 {
@@ -28,11 +25,11 @@ namespace MinerPluginToolkitV1
         /// <summary>
         /// This is tag used for logging, specific for each <see cref="MinerBase"/> object
         /// </summary>
-        private string _baseTag { get; set; }
+        protected string _baseTag { get; private set; }
         /// <summary>
         /// LogGroup is used to deferentiate between different miners in logs
         /// </summary>
-        protected string _logGroup { get; private set; }
+        protected string _logGroup { get; set; }
         /// <summary>
         /// UUID is universal unique identifier for each <see cref="MinerBase"/> object
         /// </summary>
@@ -48,6 +45,10 @@ namespace MinerPluginToolkitV1
         protected string _miningLocation;
         protected string _username;
         protected string _password;
+
+        // most miners mine on a single algo and most have extra launch params
+        protected AlgorithmType _algorithmType;
+        protected string _extraLaunchParameters = "";
 
         public MinerBase(string uuid)
         {
@@ -85,9 +86,19 @@ namespace MinerPluginToolkitV1
 
         abstract protected void Init();
 
-        public void InitMiningPairs(IEnumerable<MiningPair> miningPairs)
+        // override this on plugins with mapped ids or special mining pairs sorting
+        protected virtual IEnumerable<MiningPair> GetSortedMiningPairs(IEnumerable<MiningPair> miningPairs)
         {
-            _miningPairs = miningPairs;
+            var pairsList = miningPairs.ToList();
+            // by default sort by base id (Cuda and OpenCL ids) and type
+            pairsList.Sort((a, b) => a.Device.ID.CompareTo(b.Device.ID) - a.Device.DeviceType.CompareTo(b.Device.DeviceType));
+            return pairsList;
+        }
+
+        public virtual void InitMiningPairs(IEnumerable<MiningPair> miningPairs)
+        {
+            // now should be ordered
+            _miningPairs = GetSortedMiningPairs(miningPairs);
             // update log group
             try
             {
@@ -101,6 +112,27 @@ namespace MinerPluginToolkitV1
             {
                 Logger.Error(_logGroup, $"Error while setting _logGroup: {e.Message}");
             }
+
+            // init algo, ELP and finally miner specific init
+            // init algo
+            var singleType = MinerToolkit.GetAlgorithmSingleType(_miningPairs);
+            _algorithmType = singleType.Item1;
+            bool ok = singleType.Item2;
+            if (!ok)
+            {
+                Logger.Info(_logGroup, "Initialization of miner failed. Algorithm not found!");
+                throw new InvalidOperationException("Invalid mining initialization");
+            }
+            // init ELP, _miningPairs are ordered and ELP parsing keeps ordering
+            if (MinerOptionsPackage != null)
+            {
+                var miningPairsList = _miningPairs.ToList();
+                var ignoreDefaults = MinerOptionsPackage.IgnoreDefaultValueOptions;
+                var generalParams = ExtraLaunchParametersParser.Parse(miningPairsList, MinerOptionsPackage.GeneralOptions, ignoreDefaults);
+                var temperatureParams = ExtraLaunchParametersParser.Parse(miningPairsList, MinerOptionsPackage.TemperatureOptions, ignoreDefaults);
+                _extraLaunchParameters = $"{generalParams} {temperatureParams}".Trim();
+            }
+            // miner specific init
             Init();
         }
 
@@ -116,8 +148,20 @@ namespace MinerPluginToolkitV1
         abstract public Tuple<string, string> GetBinAndCwdPaths();
         abstract protected string MiningCreateCommandLine();
 
-        // most don't require extra enviorment vars
-        protected virtual Dictionary<string, string> GetEnvironmentVariables() => null;
+        protected virtual Dictionary<string, string> GetEnvironmentVariables()
+        {
+            if (MinerSystemEnvironmentVariables != null)
+            {
+                var customSettingKey = MinerToolkit.GetAlgorithmCustomSettingKey(_miningPairs);
+                if (MinerSystemEnvironmentVariables.CustomSystemEnvironmentVariables != null && MinerSystemEnvironmentVariables.CustomSystemEnvironmentVariables.ContainsKey(customSettingKey))
+                {
+                    return MinerSystemEnvironmentVariables.CustomSystemEnvironmentVariables[customSettingKey];
+                }
+
+                return MinerSystemEnvironmentVariables.DefaultSystemEnvironmentVariables;
+            }
+            return null;
+        }
 
         /// <summary>
         /// Provides available port for miner API binding
